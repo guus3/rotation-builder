@@ -314,12 +314,12 @@
   function renderRoster() {
     const body = $('rosterBody');
     body.innerHTML = '';
-    state.players.forEach((p) => {
+    [...state.players].sort((a, b) => Number(a.out) - Number(b.out)).forEach((p) => {
       const tr = document.createElement('tr');
       tr.dataset.id = p.id;
       tr.className = p.out ? 'is-out' : '';
       tr.innerHTML = `
-        <td class="c-in"><button class="inout ${p.out ? '' : 'on'}" aria-label="Playing this game" title="Playing this game">${p.out ? '' : '✓'}</button></td>
+        <td class="c-in"><button class="inout ${p.out ? '' : 'on'}" aria-label="Playing this game" aria-pressed="${!p.out}" title="Playing this game">${p.out ? '' : '✓'}</button></td>
         <td><input class="name" value="${esc(p.name)}" data-f="name" placeholder="Name" /></td>
         <td><select class="pos" data-f="pos">${POS_OPTIONS.map((o) => `<option value="${o}" ${o === (p.pos || '') ? 'selected' : ''}>${o || '–'}</option>`).join('')}</select></td>
         <td><input class="min" type="number" inputmode="numeric" min="0" max="${S()}" value="${p.out ? 0 : esc(p.target)}" placeholder="auto" data-f="target" ${p.out ? 'disabled' : ''} /></td>
@@ -348,6 +348,7 @@
         p.out = !p.out;
         if (p.out) state.pinned = state.pinned.filter((id) => id !== p.id);
         renderRoster();
+        body.querySelector(`tr[data-id="${p.id}"] .inout`).focus({ preventScroll: true });
         changed();
       });
       tr.querySelectorAll('.pick').forEach((btn) =>

@@ -190,6 +190,72 @@
     return { subs, posPenalty, cost: subs + 0.7 * longStint + 1.5 * shortStint + 0.5 * shortRest + 0.5 * offWindow + 0.6 * posPenalty };
   }
 
+  // Give player `idx` exactly `newVal` minutes by editing an existing slot lineup
+  // (lineup[s][j] = player index) as little as possible. Minutes are moved in chunks at the
+  // start/end of stints (i.e. by shifting substitution times), taken from / given to the
+  // other players in a fair way. Players in `locked` keep their minutes.
+  function adjustMinutes(lineup, idx, newVal, posVals, cfg, locked = new Set()) {
+    const S = lineup.length;
+    const N = cfg.onCourt;
+    const n = posVals.length;
+    newVal = Math.max(0, Math.min(S, Math.round(newVal)));
+    const lu = lineup.map((r) => r.slice());
+    const posCost = cfg.balancePositions !== false && posVals.some((v) => v != null) ? makePosCost(posVals, N) : null;
+    const c2 = { ...cfg, posCost };
+    const slotTarget = (k) => (N === 1 ? 0 : (k * 4) / (N - 1));
+    const g = Array.from({ length: n }, () => new Array(S).fill(0));
+    lu.forEach((row, s) => row.forEach((i) => (g[i][s] = 1)));
+    const mins0 = g.map((r) => r.reduce((a, b) => a + b, 0));
+    const change = new Array(n).fill(0);
+    const fits = (z, j) => posVals[z] == null || !forbidden(posVals[z], j, N);
+    const slotFit = (z, j) => (posVals[z] == null ? 0 : 0.3 * Math.abs(posVals[z] - slotTarget(j)));
+    const fair = (i, k) => (0.6 * ((Math.abs(change[i]) + k) ** 2 - change[i] ** 2)) / (1 + mins0[i] / 8);
+    let need = newVal - mins0[idx];
+
+    for (let iter = 0; iter < 400 && need !== 0; iter++) {
+      const base = analyze(g, c2).cost;
+      let best = null;
+      // Runs of `from` in slot j get (partly) handed over to `to`.
+      const tryRun = (from, to, j, s, e, maxK, other) => {
+        if (!fits(to, j)) return;
+        for (const fromStart of [true, false]) {
+          for (let k = 1; k <= Math.min(maxK, e - s); k++) {
+            const a = fromStart ? s : e - k, b = fromStart ? s + k : e;
+            const t = fromStart ? b - 1 : a;
+            if (g[to][t]) break;
+            g[from].fill(0, a, b); g[to].fill(1, a, b);
+            const c = (analyze(g, c2).cost - base + k * slotFit(to, j) + fair(other, k)) / k;
+            g[from].fill(1, a, b); g[to].fill(0, a, b);
+            if (!best || c < best.c) best = { c, a, b, j, from, to, other };
+          }
+        }
+      };
+      for (let j = 0; j < N; j++) {
+        for (let s = 0; s < S; s++) {
+          const y = lu[s][j];
+          if (s > 0 && lu[s - 1][j] === y) continue;
+          let e = s;
+          while (e < S && lu[e][j] === y) e++;
+          if (need > 0 && y !== idx && !locked.has(y)) tryRun(y, idx, j, s, e, need, y);
+          if (need < 0 && y === idx) {
+            for (let z = 0; z < n; z++) {
+              if (z === idx || locked.has(z) || mins0[z] === 0) continue;
+              tryRun(idx, z, j, s, e, -need, z);
+            }
+          }
+        }
+      }
+      if (!best) break;
+      const k = best.b - best.a;
+      for (let t = best.a; t < best.b; t++) lu[t][best.j] = best.to;
+      g[best.from].fill(0, best.a, best.b);
+      g[best.to].fill(1, best.a, best.b);
+      change[best.other] += need > 0 ? -k : k;
+      need += need > 0 ? -k : k;
+    }
+    return lu;
+  }
+
   function buildRotation(players, cfg, opts = {}) {
     const T = cfg.periods * cfg.periodLen;
     const targets = normalizeTargets(players.map((p) => p.target), T, cfg.onCourt);
@@ -291,13 +357,27 @@
         if (c < bestCost) { bestCost = c; best = perm; }
       }
       best.forEach((p, r) => (slots[free[r]] = p));
+      // Keeping players in their row must not leave e.g. an F at C: then re-seat everyone, moving as few as possible.
+      if (!reset && on.length === N && N <= 7 && slots.some((p, k) => p >= 0 && forbidden(posVals[p], k, N))) {
+        let bestAll = null, bestAllCost = Infinity;
+        for (const perm of permutations(on)) {
+          let c = 0;
+          perm.forEach((p, k) => {
+            const pv = posVals[p];
+            if (pv != null) c += (forbidden(pv, k, N) ? 100 : 0) + 0.2 * Math.abs(pv - slotTarget(k));
+            if (prev[k] !== p) c += prev.includes(p) ? 1 : 0.01;
+          });
+          if (c < bestAllCost) { bestAllCost = c; bestAll = perm; }
+        }
+        bestAll.forEach((p, k) => (slots[k] = p));
+      }
       out.push(slots);
       prev = slots;
     }
     return out;
   }
 
-  const api = { normalizeTargets, buildRotation, subEvents, analyze, assignSlots, makePosCost, POS_VAL };
+  const api = { normalizeTargets, buildRotation, subEvents, analyze, assignSlots, makePosCost, POS_VAL, adjustMinutes };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.Rotation = api;
 })(this);

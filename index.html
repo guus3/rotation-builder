@@ -56,9 +56,15 @@
 
     <section class="card" id="roster">
       <h2><span class="step">2</span> Players &amp; minutes</h2>
-      <p class="hint">Leave minutes empty to split the rest evenly. ⭐ = starter. <b>0</b> = won't play. Set positions to get balanced lineups (e.g. always a ball-handler and a big). G = PG/SG, F = SF/PF.</p>
+      <div class="teambar">
+        <label for="teamSel">Team</label>
+        <select id="teamSel" aria-label="Team template"></select>
+        <button id="saveTeam" class="secondary" title="Save these players as a team you can pick every game">💾 Save team</button>
+        <button id="delTeam" class="ghost" title="Delete this team" hidden>🗑</button>
+      </div>
+      <p class="hint">Save your players once as a team, then pick it every game and untick ✓ who's not playing. Leave minutes empty to split the rest evenly. ⭐ = starter. Set positions to get balanced lineups. G = PG/SG, F = SF/PF.</p>
       <table class="roster">
-        <thead><tr><th>#</th><th>Name</th><th>Pos</th><th>Min</th><th title="Starter">⭐</th><th></th></tr></thead>
+        <thead><tr><th title="Playing this game">In</th><th>#</th><th>Name</th><th>Pos</th><th>Min</th><th title="Starter">⭐</th><th></th></tr></thead>
         <tbody id="rosterBody"></tbody>
       </table>
       <div class="row buttons">
@@ -87,10 +93,10 @@
           <button id="printBtn" class="secondary">🖨️ Print</button>
         </div>
       </div>
-      <p class="hint noprint">Tap a bar to change who plays there.</p>
+      <p class="hint noprint">Tap a bar to change who plays there. Drag the white line between two players to move the sub, or drag a bar sideways. Use − / + below to change a player's minutes – the others adjust automatically (📌 = keep fixed).</p>
       <div id="lineup" class="lu-cards"></div>
 
-      <div id="minutes" class="minutes"></div>
+      <div id="minutes" class="minutes noprint"></div>
 
       <h2 class="subs-title">Substitutions</h2>
       <div id="subs" class="subs"></div>

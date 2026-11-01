@@ -1,5 +1,6 @@
 (function () {
   const STORE_KEY = 'rotation-builder-v1';
+  const TEAMS_KEY = 'rotation-builder-teams';
   const $ = (id) => document.getElementById(id);
   const POS = ['PG', 'SG', 'SF', 'PF', 'C'];
   const POS_OPTIONS = ['', 'PG', 'SG', 'SF', 'PF', 'C', 'G', 'F'];
@@ -12,6 +13,8 @@
     players: [],
     lineup: null, // lineup[minute][slot] = player id
     targets: null, // { playerId: minutes }
+    pinned: [], // player ids whose minutes were set by hand and should not be changed automatically
+    teamId: null,
     seed: 1,
   });
 
@@ -24,6 +27,7 @@
   const L = () => state.settings.periodLen;
   const N = () => state.settings.onCourt;
   const byId = (id) => state.players.find((p) => p.id === id);
+  const active = () => state.players.filter((p) => !p.out);
   const label = (p) => (p.num !== '' && p.num != null ? `#${p.num} ` : '') + (p.name || 'Player');
   const shortName = (p) => (p ? p.name || (p.num !== '' ? `#${p.num}` : 'Player') : '?');
   const slotLabel = (j) => (N() === 5 ? POS[j] : String(j + 1));
@@ -51,7 +55,7 @@
   function lineupValid() {
     const lu = state.lineup;
     if (!lu || lu.length !== S()) return false;
-    const ids = new Set(state.players.map((p) => p.id));
+    const ids = new Set(active().map((p) => p.id));
     return lu.every((row) => row.length === N() && row.every((id) => ids.has(id)));
   }
   function playerGrid() {
@@ -66,16 +70,38 @@
     state.lineup.forEach((row) => row.forEach((id) => (m[id] = (m[id] || 0) + 1)));
     return m;
   }
+  const posValOf = (p) => (p.pos in POS_VAL ? POS_VAL[p.pos] : null);
+  // gridRows are indexed like active()
   function lineupFromGrid(gridRows) {
-    const posVals = state.players.map((p) => (p.pos in POS_VAL ? POS_VAL[p.pos] : null));
-    return Rotation.assignSlots(gridRows, posVals, N(), L()).map((row) => row.map((i) => state.players[i].id));
+    const act = active();
+    return Rotation.assignSlots(gridRows, act.map(posValOf), N(), L()).map((row) => row.map((i) => act[i].id));
+  }
+  function pushUndo() {
+    undoStack.push(JSON.stringify({ lineup: state.lineup, targets: state.targets, pinned: state.pinned }));
+    if (undoStack.length > 50) undoStack.shift();
+  }
+  // After hand edits the rotation is the truth: targets (and roster minutes) follow it.
+  function syncTargetsToLineup() {
+    const mp = minutesPlayed();
+    state.targets = {};
+    active().forEach((p) => {
+      state.targets[p.id] = mp[p.id];
+      p.target = mp[p.id];
+    });
+    document.querySelectorAll('#rosterBody tr').forEach((tr) => {
+      const p = byId(Number(tr.dataset.id));
+      const inp = tr.querySelector('.min');
+      if (p && inp && !p.out) inp.value = p.target;
+    });
+    renderStatus();
   }
 
   // ---------- Storage & share links ----------
   function normalize(s) {
     const d = defaults();
     const out = { ...d, ...s, settings: { ...d.settings, ...(s.settings || {}) } };
-    out.players = (out.players || []).map((p) => ({ pos: '', ...p }));
+    out.players = (out.players || []).map((p) => ({ pos: '', out: false, ...p }));
+    out.pinned = out.pinned || [];
     return out;
   }
   function save() {
@@ -97,7 +123,7 @@
       v: 2,
       t: state.title,
       s: [st.periods, st.periodLen, st.subEvery, st.maxStint, st.minRest, st.onCourt, st.startersEachHalf ? 1 : 0, st.balancePositions ? 1 : 0],
-      p: state.players.map((p) => [p.num, p.name, p.target, p.starter ? 1 : 0, p.pos || '']),
+      p: state.players.map((p) => [p.num, p.name, p.target, p.starter ? 1 : 0, p.pos || '', p.out ? 1 : 0]),
       g: state.players.map((p) => state.targets?.[p.id] ?? null),
       w,
       l: lineupValid() ? state.lineup.map((row) => row.map((id) => idx.get(id).toString(36).padStart(w, '0')).join('')).join('') : '',
@@ -115,7 +141,7 @@
     s.title = d.t || '';
     const [periods, periodLen, subEvery, maxStint, minRest, onCourt, seh, bal] = d.s;
     s.settings = { periods, periodLen, subEvery, maxStint, minRest, onCourt, startersEachHalf: !!seh, balancePositions: bal !== 0 };
-    s.players = d.p.map((a, i) => ({ id: i + 1, num: a[0] ?? '', name: a[1] ?? '', target: a[2] ?? '', starter: !!a[3], pos: a[4] || '' }));
+    s.players = d.p.map((a, i) => ({ id: i + 1, num: a[0] ?? '', name: a[1] ?? '', target: a[2] ?? '', starter: !!a[3], pos: a[4] || '', out: !!a[5] }));
     s.targets = {};
     s.players.forEach((p, i) => (s.targets[p.id] = d.g?.[i] ?? null));
     if (d.l) {
@@ -213,8 +239,11 @@
     body.innerHTML = '';
     state.players.forEach((p) => {
       const tr = document.createElement('tr');
+      tr.dataset.id = p.id;
+      tr.className = p.out ? 'is-out' : '';
       tr.innerHTML = `
-        <td><input class="num" inputmode="numeric" maxlength="3" value="${esc(p.num)}" data-f="num" /></td>
+        <td class="c-in"><button class="inout ${p.out ? '' : 'on'}" aria-label="Playing this game" title="Playing this game">${p.out ? '' : '✓'}</button></td>
+        <td class="c-num"><input class="num" inputmode="numeric" maxlength="3" value="${esc(p.num)}" data-f="num" /></td>
         <td><input class="name" value="${esc(p.name)}" data-f="name" placeholder="Name" /></td>
         <td><select class="pos" data-f="pos">${POS_OPTIONS.map((o) => `<option value="${o}" ${o === (p.pos || '') ? 'selected' : ''}>${o || '–'}</option>`).join('')}</select></td>
         <td><input class="min" type="number" inputmode="numeric" min="0" max="${S()}" value="${esc(p.target)}" placeholder="auto" data-f="target" /></td>
@@ -235,10 +264,16 @@
         // Re-sort rows by position but keep who plays when (preserves manual edits).
         if (lineupValid()) {
           const g = playerGrid();
-          state.lineup = lineupFromGrid(state.players.map((x) => g[x.id]));
+          state.lineup = lineupFromGrid(active().map((x) => g[x.id]));
         }
         save();
         renderResult();
+      });
+      tr.querySelector('.inout').addEventListener('click', () => {
+        p.out = !p.out;
+        if (p.out) state.pinned = state.pinned.filter((id) => id !== p.id);
+        renderRoster();
+        changed();
       });
       tr.querySelector('.star').addEventListener('click', (e) => {
         p.starter = !p.starter;
@@ -259,11 +294,14 @@
   function renderStatus() {
     const s = state.settings;
     const need = S() * s.onCourt;
-    const set = state.players.filter((p) => p.target !== '' && p.target != null);
+    const act = active();
+    const set = act.filter((p) => p.target !== '' && p.target != null);
     const sum = set.reduce((a, p) => a + Number(p.target || 0), 0);
-    const blanks = state.players.length - set.length;
-    const starters = state.players.filter((p) => p.starter).length;
+    const blanks = act.length - set.length;
+    const starters = act.filter((p) => p.starter).length;
     const parts = [];
+    const outN = state.players.length - act.length;
+    if (outN) parts.push(`${act.length} playing, ${outN} out`);
     let cls = 'ok';
     if (blanks === 0) {
       if (sum === need) parts.push(`✅ ${sum} / ${need} minutes assigned`);
@@ -274,14 +312,14 @@
       else parts.push(`${sum} / ${need} set, ${blanks} on auto (~${Math.round(each)} min each)`);
     }
     if (starters !== s.onCourt) { cls = 'warn'; parts.push(`⭐ ${starters} starters picked (pick ${s.onCourt}, or none to auto-pick)`); }
-    if (state.players.length < s.onCourt) { cls = 'warn'; parts.push(`Need at least ${s.onCourt} players`); }
+    if (act.length < s.onCourt) { cls = 'warn'; parts.push(`Need at least ${s.onCourt} players`); }
     const el = $('minuteStatus');
     el.className = `status ${cls}`;
     el.innerHTML = parts.join('<br>');
   }
 
   $('addPlayer').addEventListener('click', () => {
-    state.players.push({ id: ++uid, num: '', name: '', target: '', starter: false, pos: '' });
+    state.players.push({ id: ++uid, num: '', name: '', target: '', starter: false, pos: '', out: false });
     renderRoster();
     const names = document.querySelectorAll('#rosterBody .name');
     names[names.length - 1].focus();
@@ -289,6 +327,7 @@
   });
   $('evenBtn').addEventListener('click', () => {
     state.players.forEach((p) => { if (p.target !== 0) p.target = ''; });
+    state.pinned = [];
     renderRoster();
     changed();
   });
@@ -296,6 +335,9 @@
     if (!confirm('Clear all players?')) return;
     state.players = [];
     state.lineup = null;
+    state.pinned = [];
+    state.teamId = null;
+    renderTeams();
     renderRoster();
     renderResult();
     save();
@@ -314,12 +356,76 @@
       if (tokens.length > 1 && /^\d{1,2}$/.test(tokens[tokens.length - 1])) target = Number(tokens.pop());
       const pi = tokens.findIndex((t, k) => k > 0 && /^(PG|SG|SF|PF|C|G|F)$/i.test(t));
       if (pi > 0) pos = tokens.splice(pi, 1)[0].toUpperCase();
-      return { id: ++uid, num, name: tokens.join(' '), target, starter: i < state.settings.onCourt, pos };
+      return { id: ++uid, num, name: tokens.join(' '), target, starter: i < state.settings.onCourt, pos, out: false };
     });
+    state.pinned = [];
+    state.teamId = null;
+    renderTeams();
     $('pasteBox').hidden = true;
     $('pasteText').value = '';
     renderRoster();
     build();
+  });
+
+  // ---------- Teams ----------
+  function loadTeams() {
+    try { return JSON.parse(localStorage.getItem(TEAMS_KEY)) || []; } catch (e) { return []; }
+  }
+  function storeTeams(teams) {
+    localStorage.setItem(TEAMS_KEY, JSON.stringify(teams));
+  }
+  function renderTeams() {
+    const teams = loadTeams();
+    if (!teams.some((t) => t.id === state.teamId)) state.teamId = null;
+    $('teamSel').innerHTML = `<option value="">${teams.length ? '— pick a team —' : '— no saved teams yet —'}</option>` +
+      teams.map((t) => `<option value="${t.id}" ${t.id === state.teamId ? 'selected' : ''}>${esc(t.name)} (${t.players.length})</option>`).join('');
+    $('delTeam').hidden = !state.teamId;
+  }
+  $('teamSel').addEventListener('change', (e) => {
+    const id = Number(e.target.value);
+    const team = loadTeams().find((t) => t.id === id);
+    if (!team) { state.teamId = null; renderTeams(); save(); return; }
+    if (state.lineup && !confirm(`Load "${team.name}"? The current rotation will be replaced.`)) { renderTeams(); return; }
+    state.teamId = team.id;
+    state.players = team.players.map((p) => ({ id: ++uid, num: '', name: '', target: '', starter: false, pos: '', ...p, out: false }));
+    if (team.settings) state.settings = { ...state.settings, ...team.settings };
+    state.lineup = null;
+    state.targets = null;
+    state.pinned = [];
+    undoStack = [];
+    renderSettings();
+    renderTeams();
+    renderRoster();
+    renderResult();
+    save();
+    toast(`${team.name} loaded – untick ✓ for players who are out`);
+  });
+  $('saveTeam').addEventListener('click', () => {
+    if (!state.players.length) { toast('Add players first'); return; }
+    const teams = loadTeams();
+    const cur = teams.find((t) => t.id === state.teamId);
+    const name = (prompt('Team name', cur ? cur.name : state.title || '') || '').trim();
+    if (!name) return;
+    const players = state.players.map((p) => ({ num: p.num, name: p.name, pos: p.pos || '', target: p.target, starter: !!p.starter }));
+    const existing = teams.find((t) => t.name.toLowerCase() === name.toLowerCase());
+    const team = existing || { id: Date.now(), name };
+    Object.assign(team, { name, players, settings: { ...state.settings } });
+    if (!existing) teams.push(team);
+    teams.sort((a, b) => a.name.localeCompare(b.name));
+    storeTeams(teams);
+    state.teamId = team.id;
+    save();
+    renderTeams();
+    toast(`Saved team "${name}" (${players.length} players)`);
+  });
+  $('delTeam').addEventListener('click', () => {
+    const teams = loadTeams();
+    const team = teams.find((t) => t.id === state.teamId);
+    if (!team || !confirm(`Delete team "${team.name}"? (The current players stay.)`)) return;
+    storeTeams(teams.filter((t) => t.id !== team.id));
+    state.teamId = null;
+    save();
+    renderTeams();
   });
 
   // ---------- Build ----------
@@ -335,10 +441,12 @@
     const err = $('error');
     err.hidden = true;
     try {
-      const r = Rotation.buildRotation(state.players.map((p) => ({ ...p })), { ...state.settings }, { seed: state.seed });
+      const act = active();
+      const r = Rotation.buildRotation(act.map((p) => ({ ...p })), { ...state.settings }, { seed: state.seed });
       state.lineup = lineupFromGrid(r.grid);
       state.targets = {};
-      state.players.forEach((p, i) => (state.targets[p.id] = r.targets[i]));
+      act.forEach((p, i) => (state.targets[p.id] = r.targets[i]));
+      state.pinned = [];
       undoStack = [];
       save();
       renderResult();
@@ -362,7 +470,11 @@
   });
   $('undoBtn').addEventListener('click', () => {
     if (!undoStack.length) return;
-    state.lineup = JSON.parse(undoStack.pop());
+    const u = JSON.parse(undoStack.pop());
+    state.lineup = u.lineup;
+    state.targets = u.targets;
+    state.pinned = u.pinned || [];
+    syncTargetsToLineup();
     save();
     renderResult();
   });
@@ -438,10 +550,14 @@
         for (let m = 0; m < L(); m++) html += `<span class="${m % 2 ? 'odd' : ''}" style="left:${(m / L()) * 100}%">${L() - m}:00</span>`;
         html += '</div>';
         for (let j = 0; j < N(); j++) {
-          html += `<div class="lu-row"><span class="lu-pos">${slotLabel(j)}</span><div class="lu-bar">`;
-          segments(k, j).forEach((sg) => {
+          html += `<div class="lu-row"><span class="lu-pos">${slotLabel(j)}</span><div class="lu-bar" data-j="${j}" data-k="${k}">`;
+          const segs = segments(k, j);
+          segs.forEach((sg) => {
             const p = byId(sg.id);
             html += `<button class="lu-seg" style="flex:${sg.b - sg.a} 1 0;background:${colorOf(sg.id)}" data-j="${j}" data-a="${sg.a}" data-b="${sg.b}" title="${esc(label(p))} ${clock(sg.a)}–${endClock(sg.b)}"><span class="chip">${esc(shortName(p))}</span></button>`;
+          });
+          segs.slice(0, -1).forEach((sg) => {
+            html += `<span class="lu-handle" data-j="${j}" data-t="${sg.b}" style="left:${((sg.b - k * L()) / L()) * 100}%" title="Drag to move the substitution"></span>`;
           });
           html += '</div></div>';
         }
@@ -454,15 +570,69 @@
 
   function renderMinutes() {
     const mp = minutesPlayed();
-    $('minutes').innerHTML = state.players
-      .filter((p) => mp[p.id] || state.targets?.[p.id])
+    $('minutes').innerHTML = active()
       .map((p) => {
-        const t = state.targets?.[p.id];
-        const off = t != null && t !== mp[p.id];
-        return `<span class="mchip ${off ? 'off' : ''}" title="${off ? `target ${t}` : ''}"><i style="background:${colorOf(p.id)}"></i>${esc(shortName(p))} <b>${mp[p.id]}</b>${off ? `<small>/${t}</small>` : ''}</span>`;
+        const pinned = state.pinned.includes(p.id);
+        return `<div class="mrow ${pinned ? 'pinned' : ''}" data-id="${p.id}">
+          <i style="background:${colorOf(p.id)}"></i>
+          <span class="nm">${esc(shortName(p))}</span>
+          <button class="pin" title="${pinned ? 'Fixed – tap to let it change automatically' : 'Tap to keep these minutes fixed'}" aria-label="Pin">📌</button>
+          <button class="mstep" data-d="-1" aria-label="One minute less">−</button>
+          <input class="mval" type="number" inputmode="numeric" min="0" max="${S()}" value="${mp[p.id]}" aria-label="Minutes" />
+          <button class="mstep" data-d="1" aria-label="One minute more">+</button>
+        </div>`;
       })
       .join('');
   }
+
+  // Give one player new minutes; the rotation and the other players adjust automatically.
+  function adjustPlayer(id, newVal) {
+    const act = active();
+    const idx = act.findIndex((p) => p.id === id);
+    if (idx < 0) return;
+    const before = minutesPlayed();
+    newVal = Math.max(0, Math.min(S(), Math.round(newVal)));
+    if (newVal === before[id]) { renderMinutes(); return; }
+    const pos = new Map(act.map((p, i) => [p.id, i]));
+    const locked = new Set(state.pinned.filter((x) => x !== id && pos.has(x)).map((x) => pos.get(x)));
+    const luIdx = state.lineup.map((row) => row.map((x) => pos.get(x)));
+    const res = Rotation.adjustMinutes(luIdx, idx, newVal, act.map(posValOf), { ...state.settings }, locked);
+    pushUndo();
+    state.lineup = res.map((row) => row.map((i) => act[i].id));
+    if (!state.pinned.includes(id)) state.pinned.push(id);
+    syncTargetsToLineup();
+    save();
+    renderResult();
+    const after = minutesPlayed();
+    const diffs = act
+      .filter((p) => p.id !== id && after[p.id] !== before[p.id])
+      .map((p) => `${shortName(p)} ${after[p.id] > before[p.id] ? '+' : ''}${after[p.id] - before[p.id]}`);
+    const p = byId(id);
+    if (after[id] !== newVal) toast(`${shortName(p)}: could only get ${after[id]} min (unpin 📌 others to free minutes)`);
+    else toast(`${shortName(p)} ${after[id]} min${diffs.length ? ' · ' + diffs.join(', ') : ''}`);
+  }
+
+  $('minutes').addEventListener('click', (e) => {
+    const row = e.target.closest('.mrow');
+    if (!row) return;
+    const id = Number(row.dataset.id);
+    if (e.target.closest('.pin')) {
+      state.pinned = state.pinned.includes(id) ? state.pinned.filter((x) => x !== id) : [...state.pinned, id];
+      save();
+      renderMinutes();
+      return;
+    }
+    const step = e.target.closest('.mstep');
+    if (step) adjustPlayer(id, minutesPlayed()[id] + Number(step.dataset.d));
+  });
+  $('minutes').addEventListener('change', (e) => {
+    const inp = e.target.closest('.mval');
+    if (!inp || inp.value === '') return;
+    adjustPlayer(Number(inp.closest('.mrow').dataset.id), Number(inp.value));
+  });
+  $('minutes').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target.closest('.mval')) e.target.blur();
+  });
 
   function subsAt(s) {
     const prev = state.lineup[s - 1], cur = state.lineup[s];
@@ -503,7 +673,7 @@
     let html = '<thead><tr><th class="pname"></th>';
     for (let k = 0; k < state.settings.periods; k++) html += `<th class="per" colspan="${L()}">${periodShort(k)}</th>`;
     html += '<th class="tot">Min</th></tr></thead><tbody>';
-    state.players.forEach((p) => {
+    active().forEach((p) => {
       html += `<tr><th class="pname">${esc(label(p))}</th>`;
       for (let s = 0; s < T; s++) html += `<td class="cell ${s % L() === 0 ? 'pstart' : ''}" ${g[p.id][s] ? `style="background:${colorOf(p.id)}"` : ''}></td>`;
       html += `<td class="tot">${mp[p.id]}</td></tr>`;
@@ -515,7 +685,7 @@
   let edit = null;
   $('lineup').addEventListener('click', (e) => {
     const seg = e.target.closest('.lu-seg');
-    if (!seg) return;
+    if (!seg || dragJustEnded) return;
     openEdit(Number(seg.dataset.j), Number(seg.dataset.a), Number(seg.dataset.b));
   });
 
@@ -555,7 +725,7 @@
     const curIds = new Set();
     for (let s = a; s < b; s++) curIds.add(state.lineup[s][j]);
     const mp = minutesPlayed();
-    const list = state.players
+    const list = active()
       .filter((p) => !(curIds.size === 1 && curIds.has(p.id)))
       .map((p) => {
         let onCourt = false;
@@ -580,23 +750,117 @@
     if (!btn) return;
     const id = Number(btn.dataset.id);
     const [a, b] = dlgRange();
-    undoStack.push(JSON.stringify(state.lineup));
-    if (undoStack.length > 50) undoStack.shift();
-    for (let s = a; s < b; s++) {
-      const row = state.lineup[s];
-      const old = row[edit.j];
-      if (old === id) continue;
-      const other = row.indexOf(id);
-      if (other >= 0) row[other] = old;
-      row[edit.j] = id;
-    }
+    pushUndo();
+    for (let s = a; s < b; s++) setCell(state.lineup, s, edit.j, id);
     $('editDlg').close();
+    syncTargetsToLineup();
     save();
     renderResult();
   });
   $('editDlg').addEventListener('click', (e) => {
     if (e.target === $('editDlg')) $('editDlg').close();
   });
+
+  // ---------- Drag editor ----------
+  // Put player `id` into slot j at minute s; if they were on court in another slot, swap.
+  function setCell(lu, s, j, id) {
+    const row = lu[s];
+    const old = row[j];
+    if (old === id) return;
+    const other = row.indexOf(id);
+    if (other >= 0) row[other] = old;
+    row[j] = id;
+  }
+  const runStart = (lu, j, t, lo) => { while (t > lo && lu[t - 1][j] === lu[t][j]) t--; return t; };
+  const runEnd = (lu, j, t, hi) => { while (t + 1 < hi && lu[t + 1][j] === lu[t][j]) t++; return t + 1; };
+
+  let drag = null;
+  let dragJustEnded = false;
+  let dragFrame = 0;
+
+  $('lineup').addEventListener('pointerdown', (e) => {
+    if (e.button > 0) return;
+    const handle = e.target.closest('.lu-handle');
+    const seg = handle ? null : e.target.closest('.lu-seg');
+    if (!handle && !seg) return;
+    const bar = (handle || seg).closest('.lu-bar');
+    const j = Number(bar.dataset.j), k = Number(bar.dataset.k);
+    const lo = k * L(), hi = (k + 1) * L();
+    const lu = state.lineup;
+    const d = {
+      j, lo, hi, x0: e.clientX, rect: bar.getBoundingClientRect(), moved: false,
+      snapshot: lu.map((r) => r.slice()),
+      undo: JSON.stringify({ lineup: state.lineup, targets: state.targets, pinned: state.pinned }),
+    };
+    if (handle) {
+      const t = Number(handle.dataset.t);
+      Object.assign(d, { mode: 'edge', t, A: lu[t - 1][j], B: lu[t][j], sa: runStart(lu, j, t - 1, lo), eb: runEnd(lu, j, t, hi) });
+      e.preventDefault();
+    } else {
+      const a = Number(seg.dataset.a), b = Number(seg.dataset.b);
+      Object.assign(d, {
+        mode: 'move', a, b, P: lu[a][j],
+        left: a > lo ? lu[a - 1][j] : null, leftStart: a > lo ? runStart(lu, j, a - 1, lo) : a,
+        right: b < hi ? lu[b][j] : null, rightEnd: b < hi ? runEnd(lu, j, b, hi) : b,
+      });
+    }
+    drag = d;
+  });
+
+  window.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x0;
+    if (!drag.moved && Math.abs(dx) < 6) return;
+    drag.moved = true;
+    const minW = drag.rect.width / L();
+    const lu = drag.snapshot.map((r) => r.slice());
+    const j = drag.j;
+    let tip;
+    if (drag.mode === 'edge') {
+      let t = drag.lo + Math.round((e.clientX - drag.rect.left) / minW);
+      t = Math.max(drag.sa, Math.min(drag.eb, t));
+      if (t > drag.t) for (let s = drag.t; s < t; s++) setCell(lu, s, j, drag.A);
+      else for (let s = t; s < drag.t; s++) setCell(lu, s, j, drag.B);
+      tip = t === drag.sa ? `${shortName(byId(drag.B))} plays the whole stint` : t === drag.eb ? `${shortName(byId(drag.A))} plays the whole stint` : `${shortName(byId(drag.B))} in for ${shortName(byId(drag.A))} at ${clock(t)}`;
+    } else {
+      let m = Math.round(dx / minW);
+      // Moving needs a neighbour on both sides: one gives minutes, the other takes the freed ones.
+      if (drag.left == null || drag.right == null) m = 0;
+      m = Math.max(drag.leftStart - drag.a, Math.min(drag.rightEnd - drag.b, m));
+      for (let s = drag.a + m; s < drag.b + m; s++) setCell(lu, s, j, drag.P);
+      if (m > 0) for (let s = drag.a; s < drag.a + m; s++) setCell(lu, s, j, drag.left);
+      if (m < 0) for (let s = drag.b + m; s < drag.b; s++) setCell(lu, s, j, drag.right);
+      tip = drag.left == null || drag.right == null
+        ? 'Drag the white line between players to change the sub time'
+        : `${shortName(byId(drag.P))} ${clock(drag.a + m)}–${endClock(drag.b + m)}`;
+    }
+    state.lineup = lu;
+    toast(tip);
+    cancelAnimationFrame(dragFrame);
+    dragFrame = requestAnimationFrame(() => { renderLineup(); renderMinutes(); });
+  });
+
+  function endDrag(commit) {
+    if (!drag) return;
+    const d = drag;
+    drag = null;
+    if (!d.moved) return;
+    dragJustEnded = true;
+    setTimeout(() => (dragJustEnded = false), 50);
+    cancelAnimationFrame(dragFrame);
+    const changed = JSON.stringify(state.lineup) !== JSON.stringify(d.snapshot);
+    if (!commit || !changed) {
+      state.lineup = d.snapshot;
+    } else {
+      undoStack.push(d.undo);
+      if (undoStack.length > 50) undoStack.shift();
+      syncTargetsToLineup();
+      save();
+    }
+    renderResult();
+  }
+  window.addEventListener('pointerup', () => endDrag(true));
+  window.addEventListener('pointercancel', () => endDrag(false));
 
   // ---------- Image export ----------
   function rr(ctx, x, y, w, h, r) {
@@ -628,7 +892,7 @@
 
     // Measure minutes chips to size the footer.
     const mp = minutesPlayed();
-    const chips = state.players.filter((p) => mp[p.id] || state.targets?.[p.id]).map((p) => ({ p, text: `${shortName(p)}  ${mp[p.id]} min` }));
+    const chips = active().filter((p) => mp[p.id] || state.targets?.[p.id]).map((p) => ({ p, text: `${shortName(p)}  ${mp[p.id]} min` }));
     const mctx = document.createElement('canvas').getContext('2d');
     mctx.font = `500 14px ${font}`;
     let cx = 0, chipRows = 1;
@@ -761,6 +1025,7 @@
     state = await load();
     save();
     renderSettings();
+    renderTeams();
     renderRoster();
     renderResult();
   })();

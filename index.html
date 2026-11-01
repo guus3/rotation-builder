@@ -49,9 +49,12 @@
           <label>Min rest before return <input type="number" id="minRest" min="0" max="20" /></label>
           <label>Players on court <input type="number" id="onCourt" min="1" max="7" /></label>
           <label class="check"><input type="checkbox" id="startersEachHalf" /> Starters start 2nd half</label>
-          <label class="check" title="Uses the positions you set to avoid lineups like three guards or two centres at once. Minutes stay exact."><input type="checkbox" id="balancePositions" /> Balance positions on court</label>
+          <span class="check-info">
+            <label class="check"><input type="checkbox" id="balancePositions" /> Balance positions on court</label>
+            <button type="button" id="balanceInfoBtn" class="info-btn" aria-label="What does Balance positions on court mean?" aria-expanded="false" aria-controls="balanceInfo">ⓘ</button>
+          </span>
         </div>
-        <p class="hint" style="margin-top:8px">ⓘ <b>Balance positions on court:</b> uses the positions you set (PG/SG/SF/PF/C, G, F) to keep a good mix on the floor – e.g. a ball-handler and a big together, avoiding lineups like two centres or three guards at once. Minutes stay exact. Players without a position are treated as flexible. Has no effect if no positions are set.</p>
+        <p id="balanceInfo" class="hint info-box" hidden><b>Balance positions on court:</b> uses the positions you set (PG/SG/SF/PF/C, G, F) to keep a good mix on the floor – e.g. a ball-handler and a big together, avoiding lineups like two centres or three guards at once. Minutes stay exact. Players without a position are treated as flexible. Has no effect if no positions are set.</p>
       </details>
     </section>
 

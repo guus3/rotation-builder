@@ -228,6 +228,11 @@
     state.settings.balancePositions = e.target.checked;
     changed();
   });
+  $('balanceInfoBtn').addEventListener('click', (e) => {
+    const box = $('balanceInfo');
+    box.hidden = !box.hidden;
+    e.currentTarget.setAttribute('aria-expanded', String(!box.hidden));
+  });
   $('title').addEventListener('input', (e) => {
     state.title = e.target.value;
     save();

@@ -54,6 +54,10 @@ button.ghost { background: transparent; color: var(--muted); }
 button.big { width: 100%; padding: 14px; font-size: 1.1rem; font-weight: 600; margin-top: 12px; }
 .buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 .hint { color: var(--muted); font-size: 0.9rem; margin: 0 0 10px; }
+.check-info { display: inline-flex; align-items: center; gap: 2px; }
+button.info-btn { background: transparent; color: var(--muted); padding: 2px 6px; font-size: 1.05rem; line-height: 1; }
+button.info-btn[aria-expanded="true"] { color: var(--accent); }
+.info-box { margin-top: 8px; padding: 8px 10px; background: #f7f3ee; border-radius: 8px; }
 
 table.roster { width: 100%; border-collapse: collapse; }
 table.roster th { text-align: left; font-size: 0.8rem; color: var(--muted); font-weight: 500; padding: 0 4px 4px; }

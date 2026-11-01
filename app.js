@@ -33,6 +33,7 @@
   let uid = Date.now();
   let undoStack = [];
   let rotationId = null;
+  let starterTop = []; // player ids in the order they were picked as starters, newest first
 
   // ---------- Helpers ----------
   const S = () => state.settings.periods * state.settings.periodLen;
@@ -323,7 +324,8 @@
   function renderRoster() {
     const body = $('rosterBody');
     body.innerHTML = '';
-    [...state.players].sort((a, b) => Number(a.out) - Number(b.out)).forEach((p) => {
+    const rank = (p) => { const k = p.starter ? starterTop.indexOf(p.id) : -1; return k < 0 ? Infinity : k; };
+    [...state.players].sort((a, b) => Number(a.out) - Number(b.out) || (rank(a) === rank(b) ? 0 : rank(a) < rank(b) ? -1 : 1)).forEach((p) => {
       const tr = document.createElement('tr');
       tr.dataset.id = p.id;
       tr.className = p.out ? 'is-out' : '';
@@ -366,7 +368,11 @@
           // A pick that doesn't fit isn't made; the reason is shown instead (also on touch screens).
           if (!p[f] && btn.dataset.block) { toast(btn.dataset.block); return; }
           p[f] = !p[f];
-          renderStatus();
+          if (f === 'starter') {
+            starterTop = p.starter ? [p.id, ...starterTop.filter((id) => id !== p.id)] : starterTop.filter((id) => id !== p.id);
+            renderRoster();
+            body.querySelector(`tr[data-id="${p.id}"] [data-flag="${f}"]`).focus({ preventScroll: true });
+          } else renderStatus();
           changed();
         })
       );
@@ -588,6 +594,15 @@
     const names = document.querySelectorAll('#rosterBody .name');
     names[names.length - 1].focus();
     changed();
+  });
+  // Back to the default view: everyone in, original order, automatic minutes, no Start/Finish picks.
+  $('resetBtn').addEventListener('click', () => {
+    state.players.forEach((p) => { p.out = false; p.target = ''; p.starter = false; p.finisher = false; });
+    state.pinned = [];
+    starterTop = [];
+    renderRoster();
+    changed();
+    toast('Players and minutes reset');
   });
   $('evenBtn').addEventListener('click', () => {
     state.players.forEach((p) => { if (p.target !== 0) p.target = ''; });

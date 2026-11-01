@@ -249,7 +249,21 @@
       }
     } catch (e) { console.warn(e); }
     const s = defaults();
-    s.players = Array.from({ length: 10 }, (_, i) => ({ id: i + 1, num: '', name: `Player ${i + 1}`, target: '', starter: i < 5, finisher: false, pos: '' }));
+    s.players = [
+      ['Akseli', 'F'],
+      ['Anssi', 'F'],
+      ['Beni', 'C'],
+      ['Eero', 'F'],
+      ['Erkka', 'G'],
+      ['Erno', 'F'],
+      ['Lauri', 'G'],
+      ['Markus', 'F'],
+      ['Matias', 'C'],
+      ['Sele', 'G'],
+      ['Tomi', 'F'],
+      ['Waltteri S', 'G'],
+      ['Waltteri V', 'G'],
+    ].map(([name, pos], i) => ({ id: i + 1, num: '', name, pos, target: '', starter: false, finisher: false, out: false }));
     return s;
   }
 

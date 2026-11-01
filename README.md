@@ -2,6 +2,7 @@
 
 Enter players and target minutes → get a minute-by-minute rotation chart and substitution sheet.
 
+- The default roster contains our 13 team players, alphabetically by name, with their guard/forward/centre positions. Minutes are blank for automatic allocation, and starters/finishers can be picked for each game. Saved games and shared links keep their own rosters.
 - Paste a roster (`Mikko 32` per line), leave minutes blank to split evenly, tick *Start* and *Finish* for who is on court at the start and at the end (pick 5, or just the ones you want – the rest are picked automatically). The roster has no player-number column. The column headers count the picks (e.g. *Start 3/5*); a pick that can't fit (a 6th starter, a 3rd guard when only 2 fit) is shown dashed and tapping it says why. The *Starting 5 / Closing 5* summary under the list shows the picks, with *Same as starters* and *Clear*. Finishers are on court for the last minutes of the game (last 4 min in a 4×10 game); if positions or minutes don't allow it, the app says why.
 - Rotation is built automatically: exact minutes, 5 on court, subs on chosen intervals, max stint & rest rules. Subs are bunched into fewer stoppages, a quarter break counts as rest, and the players with the most minutes finish the game where possible.
 - Positions stay put (*Keep players in their positions*, under *Rotation style*): guards (PG, SG, G) only play the two guard rows, forwards (SF, PF, F) the two forward rows, centres the C row. `–` = plays anywhere.

@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Rotation Builder</title>
   <meta name="description" content="Enter player minutes, get a full basketball rotation and substitution sheet." />
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏀</text></svg>" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='46' fill='%23e4572e'/><path d='M4 50h92M50 4v92M18 18c18 18 18 46 0 64M82 18c-18 18-18 46 0 64' fill='none' stroke='%231d1d1f' stroke-width='5'/></svg>" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <header>
-    <h1>🏀 Rotation Builder</h1>
+    <h1>Rotation Builder</h1>
     <p class="tag">Enter minutes → get the rotation.</p>
   </header>
 
@@ -50,11 +50,11 @@
           <label>Players on court <input type="number" id="onCourt" min="1" max="7" /></label>
           <label class="check"><input type="checkbox" id="startersEachHalf" /> Starters start 2nd half</label>
           <span class="check-info">
-            <label class="check"><input type="checkbox" id="balancePositions" /> Balance positions on court</label>
-            <button type="button" id="balanceInfoBtn" class="info-btn" aria-label="What does Balance positions on court mean?" aria-expanded="false" aria-controls="balanceInfo">ⓘ</button>
+            <label class="check"><input type="checkbox" id="balancePositions" /> Keep players in their positions</label>
+            <button type="button" id="balanceInfoBtn" class="info-btn" aria-label="What does Keep players in their positions mean?" aria-expanded="false" aria-controls="balanceInfo">ⓘ</button>
           </span>
         </div>
-        <p id="balanceInfo" class="hint info-box" hidden><b>Balance positions on court:</b> uses the positions you set (PG/SG/SF/PF/C, G, F) to keep a good mix on the floor – e.g. a ball-handler and a big together, avoiding lineups like two centres or three guards at once. Minutes stay exact. Players without a position are treated as flexible. Has no effect if no positions are set.</p>
+        <p id="balanceInfo" class="hint info-box" hidden><b>Keep players in their positions:</b> guards (PG, SG, G) play guard rows, forwards (SF, PF, F) play forward rows, and centres play the C row. Players without a position can play anywhere. If the roster cannot fill a position, the app may use the nearest group and adjust minutes; it explains the change.</p>
       </details>
     </section>
 
@@ -63,12 +63,28 @@
       <div class="teambar">
         <label for="teamSel">Team</label>
         <select id="teamSel" aria-label="Team template"></select>
-        <button id="saveTeam" class="secondary" title="Save these players as a team you can pick every game">💾 Save team</button>
-        <button id="delTeam" class="ghost" title="Delete this team" hidden>🗑</button>
+        <button id="saveTeam" class="secondary" title="Save these players as a team you can pick every game">Save team</button>
+        <button id="delTeam" class="ghost" title="Delete this team" hidden>Delete</button>
       </div>
-      <p class="hint">Save your players once as a team, then pick it every game and untick ✓ who's not playing. Leave minutes empty to split the rest evenly. ⭐ = starter. Set positions to get balanced lineups. G = PG/SG, F = SF/PF.</p>
+      <div id="teamTip" class="tip" hidden>
+        <p>Tip: save your players as a team to reuse them every game.</p>
+        <button type="button" class="ghost small" data-tip="team" aria-label="Hide this tip">Hide</button>
+      </div>
+      <div class="hint-row">
+        <p class="hint">Leave minutes empty to split them evenly.</p>
+        <details class="help">
+          <summary>How it works</summary>
+          <ul>
+            <li><b>In</b> – untick players who miss this game.</li>
+            <li><b>Min</b> – minutes for the game. Empty boxes share what's left (shown as ~20).</li>
+            <li><b>Start / Finish</b> – who is on court at the start and at the end of the game. Pick 5, or just the ones you want; the rest are picked automatically.</li>
+            <li><b>Pos</b> – players stay in position: guards (PG, SG, G) only play guard, forwards (SF, PF, F) forward, centres C. '–' plays anywhere.</li>
+            <li><b>Team</b> – save your players once, then pick the team every game.</li>
+          </ul>
+        </details>
+      </div>
       <table class="roster">
-        <thead><tr><th title="Playing this game">In</th><th>#</th><th>Name</th><th>Pos</th><th>Min</th><th title="Starter">⭐</th><th></th></tr></thead>
+        <thead><tr><th title="Playing this game">In</th><th>#</th><th>Name</th><th>Pos</th><th>Min</th><th class="c-pick" title="On court at the start">Start<small id="starterCount"></small></th><th class="c-pick" title="On court at the end of the game">Finish<small id="finisherCount"></small></th><th></th></tr></thead>
         <tbody id="rosterBody"></tbody>
       </table>
       <div class="row buttons">
@@ -81,26 +97,32 @@
         <textarea id="pasteText" rows="6" placeholder="One player per line, e.g.&#10;4 Mikko PG 30&#10;11 Jussi C 25&#10;Ville"></textarea>
         <button id="pasteApply">Use this list</button>
       </div>
+      <div id="picks" class="picks"></div>
       <div id="minuteStatus" class="status"></div>
       <button id="buildBtn" class="big">Build rotation</button>
       <div id="error" class="error" hidden></div>
     </section>
 
     <section class="card" id="result" hidden>
+      <h1 id="printTitle" class="print-only"></h1>
       <div class="result-head">
-        <h2><span class="step">3</span> Rotation</h2>
+        <h2><span class="step">3</span> Rotation <button type="button" id="editHelp" class="link noprint" hidden>How to edit</button></h2>
         <div class="buttons">
-          <button id="undoBtn" class="secondary" hidden>↶ Undo</button>
-          <button id="rebuildBtn" class="secondary" title="Build a different variation">🔀 New version</button>
-          <button id="shareBtn">🔗 Share link</button>
-          <button id="imageBtn">🖼️ Image</button>
-          <button id="printBtn" class="secondary">🖨️ Print</button>
+          <button id="undoBtn" class="secondary" hidden>Undo</button>
+          <button id="rebuildBtn" class="secondary" title="Build a different variation">New version</button>
+          <button id="shareBtn">Share link</button>
+          <button id="imageBtn">Save image</button>
+          <button id="printBtn" class="secondary">Print</button>
         </div>
       </div>
-      <p class="hint noprint">Tap a bar to change who plays there. Drag the white line between two players to move the sub, or drag a bar sideways. Use − / + below to change a player's minutes – the others adjust automatically (📌 = keep fixed).</p>
+      <div id="editTip" class="tip noprint" hidden>
+        <p>Tap a bar to change who plays. Drag the white line between two players to move a sub. Use − / + to change minutes – the others adjust, and the lock keeps a player's minutes fixed.</p>
+        <button type="button" class="secondary small" data-tip="edit">Got it</button>
+      </div>
       <div id="lineup" class="lu-cards"></div>
 
       <div id="minutes" class="minutes noprint"></div>
+      <p id="printMinutes" class="print-only"></p>
 
       <h2 class="subs-title">Substitutions</h2>
       <div id="subs" class="subs"></div>
@@ -113,7 +135,7 @@
   </main>
 
   <footer class="noprint">Saved automatically in this browser. Shared links open an editable copy.</footer>
-  <div id="toast" class="toast" hidden></div>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
   <dialog id="editDlg">
     <form method="dialog" class="dlg">

@@ -17,6 +17,13 @@
   <main>
     <section class="card" id="setup">
       <h2><span class="step">1</span> Game</h2>
+      <div class="teambar">
+        <label for="rotationSel">Saved rotation</label>
+        <select id="rotationSel" aria-label="Saved rotation"></select>
+        <button id="loadRotation" class="secondary" disabled>Load</button>
+        <button id="delRotation" class="ghost" hidden>Delete saved rotation</button>
+      </div>
+      <p class="hint">Save a built rotation below, then load a copy here for the next game. Saved rotations stay in this browser.</p>
       <div class="row">
         <label class="grow">Game name <input id="title" placeholder="e.g. vs Tigers 12.11." /></label>
       </div>
@@ -110,6 +117,7 @@
         <div class="buttons">
           <button id="undoBtn" class="secondary" hidden>Undo</button>
           <button id="rebuildBtn" class="secondary" title="Build a different variation">New version</button>
+          <button id="saveRotation" class="secondary" title="Save this exact rotation to reuse for another game">Save rotation</button>
           <button id="shareBtn">Share link</button>
           <button id="imageBtn">Save image</button>
           <button id="printBtn" class="secondary">Print</button>

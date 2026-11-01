@@ -1,6 +1,7 @@
 (function () {
   const STORE_KEY = 'rotation-builder-v1';
   const TEAMS_KEY = 'rotation-builder-teams';
+  const ROTATIONS_KEY = 'rotation-builder-rotations';
   const TIPS_KEY = 'rotation-builder-tips'; // tips the coach has hidden
   const ROSTER_KEY = 'rotation-builder-roster';
   const ROSTER_VERSION = '1';
@@ -31,6 +32,7 @@
   let state;
   let uid = Date.now();
   let undoStack = [];
+  let rotationId = null;
 
   // ---------- Helpers ----------
   const S = () => state.settings.periods * state.settings.periodLen;
@@ -72,11 +74,11 @@
     toast._t = setTimeout(() => (t.hidden = true), 2500);
   }
 
-  function lineupValid() {
-    const lu = state.lineup;
-    if (!lu || lu.length !== S()) return false;
-    const ids = new Set(active().map((p) => p.id));
-    return lu.every((row) => row.length === N() && row.every((id) => ids.has(id)));
+  function lineupValid(s = state) {
+    const lu = s.lineup;
+    if (!Array.isArray(lu) || lu.length !== s.settings.periods * s.settings.periodLen) return false;
+    const ids = new Set(s.players.filter((p) => !p.out).map((p) => p.id));
+    return lu.every((row) => Array.isArray(row) && row.length === s.settings.onCourt && row.every((id) => ids.has(id)));
   }
   function playerGrid() {
     const g = {};
@@ -166,8 +168,8 @@
     if (![...Rotation.POS_MODES.map(([m]) => m), 'soft', 'off'].includes(out.mode)) out.mode = null;
     return out;
   }
-  function save() {
-    localStorage.setItem(STORE_KEY, JSON.stringify(state));
+  function save(s = state) {
+    localStorage.setItem(STORE_KEY, JSON.stringify(s));
     localStorage.setItem(ROSTER_KEY, ROSTER_VERSION);
   }
 
@@ -702,6 +704,111 @@
     state.teamId = null;
     save();
     renderTeams();
+  });
+
+  // ---------- Saved rotations ----------
+  function loadRotations() {
+    try {
+      const rotations = JSON.parse(localStorage.getItem(ROTATIONS_KEY) || '[]');
+      if (!Array.isArray(rotations) || rotations.some((r) =>
+        !r || !Number.isSafeInteger(r.id) || typeof r.name !== 'string' || !r.state || typeof r.state !== 'object'
+      )) throw new Error('Invalid saved rotation library');
+      return rotations;
+    } catch (e) {
+      console.warn(e);
+      toast('Could not read saved rotations');
+      return null;
+    }
+  }
+  function storeRotations(rotations) {
+    try {
+      localStorage.setItem(ROTATIONS_KEY, JSON.stringify(rotations));
+      return true;
+    } catch (e) {
+      console.warn(e);
+      toast('Could not save rotations. Browser storage may be full or unavailable.');
+      return false;
+    }
+  }
+  function renderRotations() {
+    const rotations = loadRotations();
+    if (!rotations?.some((r) => r.id === rotationId)) rotationId = null;
+    $('rotationSel').innerHTML = `<option value="">${rotations == null ? 'Saved rotations unavailable' : rotations.length ? 'Pick a saved rotation' : 'No saved rotations yet'}</option>` +
+      (rotations || []).map((r) => `<option value="${r.id}" ${r.id === rotationId ? 'selected' : ''}>${esc(r.name)}</option>`).join('');
+    $('loadRotation').disabled = rotationId == null;
+    $('delRotation').hidden = rotationId == null;
+  }
+  $('rotationSel').addEventListener('change', (e) => {
+    rotationId = e.target.value ? Number(e.target.value) : null;
+    $('loadRotation').disabled = rotationId == null;
+    $('delRotation').hidden = rotationId == null;
+  });
+  $('saveRotation').addEventListener('click', () => {
+    if (pending) build(null, true);
+    if (!lineupValid()) { toast('Build a valid rotation first'); return; }
+    const rotations = loadRotations();
+    if (!rotations) return;
+    const cur = rotations.find((r) => r.id === rotationId);
+    const name = (prompt('Save rotation as', state.title || cur?.name || '') || '').trim();
+    if (!name) return;
+    const existing = rotations.find((r) => r.name.toLowerCase() === name.toLowerCase());
+    if (existing && !confirm(`Replace saved rotation "${existing.name}"?`)) return;
+    const rotation = existing || { id: rotations.reduce((id, r) => Math.max(id, r.id + 1), Date.now()), name };
+    Object.assign(rotation, { name, state: JSON.parse(JSON.stringify(state)) });
+    if (!existing) rotations.push(rotation);
+    rotations.sort((a, b) => a.name.localeCompare(b.name));
+    if (!storeRotations(rotations)) return;
+    rotationId = rotation.id;
+    renderRotations();
+    toast(`Saved rotation "${name}"`);
+  });
+  $('loadRotation').addEventListener('click', () => {
+    const rotations = loadRotations();
+    if (!rotations) return;
+    const rotation = rotations.find((r) => r.id === rotationId);
+    if (!rotation) { renderRotations(); toast('Pick a saved rotation first'); return; }
+    let next;
+    try {
+      next = normalize(rotation.state);
+      if (!lineupValid(next)) throw new Error('Saved rotation has an invalid lineup');
+    } catch (e) {
+      console.warn(e);
+      toast('Could not load this saved rotation');
+      return;
+    }
+    if (!confirm(`Load "${rotation.name}"? This replaces the current game. Changes to the loaded copy will not change the saved rotation.`)) return;
+    try {
+      save(next);
+    } catch (e) {
+      console.warn(e);
+      toast('Could not load rotation. Browser storage may be full or unavailable.');
+      return;
+    }
+    clearTimeout(debounce);
+    pending = false;
+    state = next;
+    uid = Math.max(uid, ...state.players.map((p) => p.id));
+    undoStack = [];
+    $('error').hidden = true;
+    $('pasteBox').hidden = true;
+    if (state.mode == null) state.mode = currentPlan()?.mode ?? 'off';
+    renderSettings();
+    renderTeams();
+    renderRoster();
+    renderResult();
+    commit();
+    toast(`"${rotation.name}" loaded as a copy – change the game name for your next game`);
+  });
+  $('delRotation').addEventListener('click', () => {
+    const rotations = loadRotations();
+    if (!rotations) return;
+    const rotation = rotations.find((r) => r.id === rotationId);
+    if (!rotation) { renderRotations(); toast('Pick a saved rotation first'); return; }
+    if (!confirm(`Delete saved rotation "${rotation.name}"? The current game stays.`)) return;
+    if (!storeRotations(rotations.filter((r) => r.id !== rotation.id))) return;
+    rotationId = null;
+    renderRotations();
+    toast(`Deleted saved rotation "${rotation.name}"`);
   });
 
   // ---------- Build ----------
@@ -1371,6 +1478,7 @@
     commit();
     renderSettings();
     renderTeams();
+    renderRotations();
     renderRoster();
     renderResult();
   })();

@@ -33,8 +33,8 @@
   const active = () => state.players.filter((p) => !p.out);
   // Unnamed players get a unique fallback so two of them can be told apart on the sheet.
   const noName = (p) => `Player ${state.players.indexOf(p) + 1 || ''}`.trim();
-  const label = (p) => (p.num !== '' && p.num != null ? `#${p.num} ` : '') + (p.name || noName(p));
-  const shortName = (p) => (p ? p.name || (p.num !== '' && p.num != null ? `#${p.num}` : noName(p)) : '?');
+  const label = (p) => p.name || noName(p);
+  const shortName = (p) => (p ? label(p) : '?');
   // Rows are named PG..C only when positions are in use; otherwise they're just numbered.
   const posRows = () => N() === 5 && state.settings.balancePositions && active().some((p) => p.pos in POS_VAL);
   const slotLabel = (j) => (posRows() ? POS[j] : String(j + 1));
@@ -148,10 +148,10 @@
     const d = defaults();
     const out = { ...d, ...s, settings: { ...d.settings, ...(s.settings || {}) } };
     settingIds.forEach((k) => (out.settings[k] = clampSetting(k, out.settings[k], d.settings[k])));
-    out.players = (out.players || []).map((p) => {
+    out.players = (out.players || []).map(({ num, ...p }) => {
       const t = p.target === '' || p.target == null ? NaN : Number(p.target);
       return {
-        ...p, out: !!p.out, starter: !!p.starter, finisher: !!p.finisher, name: String(p.name ?? ''), num: String(p.num ?? ''),
+        ...p, out: !!p.out, starter: !!p.starter, finisher: !!p.finisher, name: String(p.name ?? ''),
         pos: POS_OPTIONS.includes(p.pos) ? p.pos : '', target: Number.isFinite(t) && t >= 0 ? t : '',
       };
     });
@@ -178,7 +178,8 @@
       v: 2,
       t: state.title,
       s: [st.periods, st.periodLen, st.subEvery, st.maxStint, st.minRest, st.onCourt, st.startersEachHalf ? 1 : 0, st.balancePositions ? 1 : 0],
-      p: state.players.map((p) => [p.num, p.name, p.target, p.starter ? 1 : 0, p.pos || '', p.out ? 1 : 0, p.finisher ? 1 : 0]),
+      // Slot 0 used to hold the player number; kept empty so older links still decode the same way.
+      p: state.players.map((p) => ['', p.name, p.target, p.starter ? 1 : 0, p.pos || '', p.out ? 1 : 0, p.finisher ? 1 : 0]),
       g: state.players.map((p) => state.targets?.[p.id] ?? null),
       w,
       l: lineupValid() ? state.lineup.map((row) => row.map((id) => idx.get(id).toString(36).padStart(w, '0')).join('')).join('') : '',
@@ -199,7 +200,7 @@
     const [periods, periodLen, subEvery, maxStint, minRest, onCourt, seh, bal] = d.s;
     s.settings = { periods, periodLen, subEvery, maxStint, minRest, onCourt, startersEachHalf: !!seh, balancePositions: bal !== 0 };
     settingIds.forEach((k) => (s.settings[k] = clampSetting(k, s.settings[k], defaults().settings[k])));
-    s.players = d.p.map((a, i) => ({ id: i + 1, num: a[0] ?? '', name: a[1] ?? '', target: a[2] ?? '', starter: !!a[3], pos: a[4] || '', out: !!a[5], finisher: !!a[6] }));
+    s.players = d.p.map((a, i) => ({ id: i + 1, name: a[1] ?? '', target: a[2] ?? '', starter: !!a[3], pos: a[4] || '', out: !!a[5], finisher: !!a[6] }));
     s.targets = {};
     s.players.forEach((p, i) => (s.targets[p.id] = d.g?.[i] ?? null));
     s.mode = d.m ?? null;
@@ -249,7 +250,7 @@
       }
     } catch (e) { console.warn(e); }
     const s = defaults();
-    s.players = Array.from({ length: 10 }, (_, i) => ({ id: i + 1, num: '', name: `Player ${i + 1}`, target: '', starter: i < 5, finisher: false, pos: '' }));
+    s.players = Array.from({ length: 10 }, (_, i) => ({ id: i + 1, name: `Player ${i + 1}`, target: '', starter: i < 5, finisher: false, pos: '' }));
     return s;
   }
 
@@ -561,7 +562,7 @@
   }
 
   $('addPlayer').addEventListener('click', () => {
-    state.players.push({ id: ++uid, num: '', name: '', target: '', starter: false, finisher: false, pos: '', out: false });
+    state.players.push({ id: ++uid, name: '', target: '', starter: false, finisher: false, pos: '', out: false });
     renderRoster();
     const names = document.querySelectorAll('#rosterBody .name');
     names[names.length - 1].focus();
@@ -594,12 +595,13 @@
     if (!lines.length) return;
     state.players = lines.map((line, i) => {
       const tokens = line.split(/[\s,;\t]+/);
-      let num = '', target = '', pos = '';
-      if (/^#?\d{1,2}$/.test(tokens[0]) && tokens.length > 1) num = tokens.shift().replace('#', '');
+      let target = '', pos = '';
+      // A leading jersey number (e.g. from a copied team sheet) is dropped so it doesn't end up in the name.
+      if (/^#?\d{1,2}$/.test(tokens[0]) && tokens.length > 1) tokens.shift();
       if (tokens.length > 1 && /^\d{1,2}$/.test(tokens[tokens.length - 1])) target = Number(tokens.pop());
       const pi = tokens.findIndex((t, k) => k > 0 && /^(PG|SG|SF|PF|C|G|F)$/i.test(t));
       if (pi > 0) pos = tokens.splice(pi, 1)[0].toUpperCase();
-      return { id: ++uid, num, name: tokens.join(' '), target, starter: i < state.settings.onCourt, finisher: false, pos, out: false };
+      return { id: ++uid, name: tokens.join(' '), target, starter: i < state.settings.onCourt, finisher: false, pos, out: false };
     });
     state.pinned = [];
     state.teamId = null;
@@ -649,7 +651,7 @@
     if (!team) { state.teamId = null; renderTeams(); save(); return; }
     if (state.lineup && !confirm(`Load "${team.name}"? The current rotation will be replaced.`)) { renderTeams(); return; }
     state.teamId = team.id;
-    state.players = team.players.map((p) => ({ id: ++uid, num: '', name: '', target: '', starter: false, finisher: false, pos: '', ...p, out: false }));
+    state.players = team.players.map(({ num, ...p }) => ({ id: ++uid, name: '', target: '', starter: false, finisher: false, pos: '', ...p, out: false }));
     if (team.settings) state.settings = { ...state.settings, ...team.settings };
     state.lineup = null;
     state.targets = null;
@@ -669,7 +671,7 @@
     const cur = teams.find((t) => t.id === state.teamId);
     const name = (prompt('Team name', cur ? cur.name : state.title || '') || '').trim();
     if (!name) return;
-    const players = state.players.map((p) => ({ num: p.num, name: p.name, pos: p.pos || '', target: p.target, starter: !!p.starter, finisher: !!p.finisher }));
+    const players = state.players.map((p) => ({ name: p.name, pos: p.pos || '', target: p.target, starter: !!p.starter, finisher: !!p.finisher }));
     const existing = teams.find((t) => t.name.toLowerCase() === name.toLowerCase());
     const team = existing || { id: Date.now(), name };
     Object.assign(team, { name, players, settings: { ...state.settings } });
@@ -769,10 +771,10 @@
     if (!s) return;
     clearTimeout(debounce);
     pending = false;
-    const typed = new Map(state.players.map((p) => [p.id, [p.name, p.num]]));
+    const typed = new Map(state.players.map((p) => [p.id, p.name]));
     Object.assign(state, JSON.parse(s));
-    // Names and numbers aren't undone: keep what was typed since.
-    state.players.forEach((p) => { if (typed.has(p.id)) [p.name, p.num] = typed.get(p.id); });
+    // Names aren't undone: keep what was typed since.
+    state.players.forEach((p) => { if (typed.has(p.id)) p.name = typed.get(p.id); });
     renderSettings();
     renderRoster();
     renderResult();

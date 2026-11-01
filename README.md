@@ -14,7 +14,7 @@ Enter players and target minutes → get a minute-by-minute rotation chart and s
 - Editor: drag the white line between two bars to move a sub, drag a bar sideways to shift a stint, or use − / + (or type) per player to change minutes – the rotation and other players adjust automatically. The lock keeps a player's minutes fixed.
 - Share link: the whole rotation is compressed into the URL – whoever opens it gets an editable copy (no server/login).
 - Save image: exports a PNG of the lineup + minutes (share sheet on phones, download on desktop). Print gives a compact bench sheet (one landscape page for a typical game) with the game name, lineups, minutes and the sub list.
-- Paste format: `Mikko PG 32` (name, optional position, optional minutes). Lists with a leading player number are still supported. Data is saved in the browser.
+- Paste format: `Mikko PG 32` (name, optional position, optional minutes). A leading jersey number (`4 Mikko`) is ignored. Data is saved in the browser.
 
 Static site (no backend): `index.html`, `app.js`, `rotation.js` (engine), `style.css`.
 Run locally: `python3 -m http.server` and open http://localhost:8000.

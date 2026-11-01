@@ -52,6 +52,36 @@
     return fl;
   }
 
+  const POS_VAL = { PG: 0, SG: 1, SF: 2, PF: 3, C: 4, G: 0.5, F: 2.5 };
+
+  // Cost of how badly a (partial) lineup covers the PG..C spots. 0 = every player fits a spot.
+  // Players without a position are flexible and cost nothing.
+  function makePosCost(posVals, N) {
+    const cache = new Map();
+    const tgt = (k) => (N === 1 ? 0 : (k * 4) / (N - 1));
+    return function (lineup) {
+      let key = 0;
+      for (const i of lineup) key += 2 ** i;
+      if (cache.has(key)) return cache.get(key);
+      const pv = lineup.map((i) => posVals[i]).filter((v) => v != null);
+      const used = new Array(N).fill(false);
+      let best = pv.length > N ? 0 : Infinity;
+      (function rec(j, acc) {
+        if (acc >= best) return;
+        if (j === pv.length) { best = acc; return; }
+        for (let k = 0; k < N; k++) {
+          if (used[k]) continue;
+          used[k] = true;
+          const d = Math.max(0, Math.abs(pv[j] - tgt(k)) - 0.5);
+          rec(j + 1, acc + d + d * d);
+          used[k] = false;
+        }
+      })(0, 0);
+      cache.set(key, best);
+      return best;
+    };
+  }
+
   function buildOnce(targets, starters, cfg, rng, p) {
     const { periods, periodLen, onCourt: N, subEvery, maxStint, minRest, startersEachHalf } = cfg;
     const S = periods * periodLen;
@@ -91,6 +121,19 @@
       // Players whose remaining minutes equal remaining time must play every minute from now on.
       for (let i = 0; i < n; i++) if (rem[i] === R) add(i);
       base.slice().sort(byScore).forEach(add);
+      if (cfg.posCost && p.posW) {
+        while (chosen.length < N) {
+          const baseCost = cfg.posCost(chosen);
+          let bi = -1, bv = -Infinity;
+          for (let i = 0; i < n; i++) {
+            if (rem[i] <= 0 || chosen.includes(i)) continue;
+            const v = score[i] - p.posW * (cfg.posCost([...chosen, i]) - baseCost);
+            if (v > bv) { bv = v; bi = i; }
+          }
+          if (bi < 0) break;
+          chosen.push(bi);
+        }
+      }
       [...Array(n).keys()].sort(byScore).forEach(add);
 
       const next = new Set(chosen);
@@ -134,13 +177,23 @@
         }
       }
     });
-    return { subs, cost: subs + 0.7 * longStint + 1.5 * shortStint + 0.5 * shortRest + 0.5 * offWindow };
+    let posPenalty = 0;
+    if (cfg.posCost) {
+      for (let s = 0; s < S; s++) {
+        const on = [];
+        for (let i = 0; i < grid.length; i++) if (grid[i][s]) on.push(i);
+        posPenalty += cfg.posCost(on);
+      }
+    }
+    return { subs, posPenalty, cost: subs + 0.7 * longStint + 1.5 * shortStint + 0.5 * shortRest + 0.5 * offWindow + 0.6 * posPenalty };
   }
 
   function buildRotation(players, cfg, opts = {}) {
     const T = cfg.periods * cfg.periodLen;
     const targets = normalizeTargets(players.map((p) => p.target), T, cfg.onCourt);
     const starters = players.map((p, i) => (p.starter && targets[i] > 0 ? i : -1)).filter((i) => i >= 0);
+    const posVals = players.map((p) => (p.pos in POS_VAL ? POS_VAL[p.pos] : null));
+    cfg = { ...cfg, posCost: cfg.balancePositions !== false && posVals.some((v) => v != null) ? makePosCost(posVals, cfg.onCourt) : null };
     const rng = mulberry32(opts.seed ?? 12345);
     const iters = opts.iterations ?? 600;
     let best = null;
@@ -150,13 +203,15 @@
         stay: 0.1 + rng() * 0.5,
         minStint: 2 + Math.floor(rng() * 3),
         urg: k === 0 ? 1 : 0.7 + rng() * 2.3,
+        posW: k === 0 ? 0.3 : rng() * 0.8,
       };
       const grid = buildOnce(targets, starters, cfg, rng, p);
       const a = analyze(grid, cfg);
       if (!best || a.cost < best.cost) best = { grid, ...a };
     }
     const grid = polish(best.grid, cfg, rng, opts.polishSteps ?? 40000);
-    return { grid, targets, subs: analyze(grid, cfg).subs };
+    const fin = analyze(grid, cfg);
+    return { grid, targets, subs: fin.subs, posPenalty: fin.posPenalty };
   }
 
   // Hill-climb with swaps that keep every player's minutes and the on-court count unchanged.
@@ -240,7 +295,7 @@
     return out;
   }
 
-  const api = { normalizeTargets, buildRotation, subEvents, analyze, assignSlots };
+  const api = { normalizeTargets, buildRotation, subEvents, analyze, assignSlots, makePosCost, POS_VAL };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.Rotation = api;
 })(this);

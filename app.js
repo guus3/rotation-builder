@@ -8,7 +8,7 @@
 
   const defaults = () => ({
     title: '',
-    settings: { periods: 4, periodLen: 10, subEvery: 2, maxStint: 6, minRest: 2, onCourt: 5, startersEachHalf: true },
+    settings: { periods: 4, periodLen: 10, subEvery: 2, maxStint: 6, minRest: 2, onCourt: 5, startersEachHalf: true, balancePositions: true },
     players: [],
     lineup: null, // lineup[minute][slot] = player id
     targets: null, // { playerId: minutes }
@@ -96,7 +96,7 @@
     const payload = {
       v: 2,
       t: state.title,
-      s: [st.periods, st.periodLen, st.subEvery, st.maxStint, st.minRest, st.onCourt, st.startersEachHalf ? 1 : 0],
+      s: [st.periods, st.periodLen, st.subEvery, st.maxStint, st.minRest, st.onCourt, st.startersEachHalf ? 1 : 0, st.balancePositions ? 1 : 0],
       p: state.players.map((p) => [p.num, p.name, p.target, p.starter ? 1 : 0, p.pos || '']),
       g: state.players.map((p) => state.targets?.[p.id] ?? null),
       w,
@@ -113,8 +113,8 @@
     const d = JSON.parse(new TextDecoder().decode(bytes));
     const s = defaults();
     s.title = d.t || '';
-    const [periods, periodLen, subEvery, maxStint, minRest, onCourt, seh] = d.s;
-    s.settings = { periods, periodLen, subEvery, maxStint, minRest, onCourt, startersEachHalf: !!seh };
+    const [periods, periodLen, subEvery, maxStint, minRest, onCourt, seh, bal] = d.s;
+    s.settings = { periods, periodLen, subEvery, maxStint, minRest, onCourt, startersEachHalf: !!seh, balancePositions: bal !== 0 };
     s.players = d.p.map((a, i) => ({ id: i + 1, num: a[0] ?? '', name: a[1] ?? '', target: a[2] ?? '', starter: !!a[3], pos: a[4] || '' }));
     s.targets = {};
     s.players.forEach((p, i) => (s.targets[p.id] = d.g?.[i] ?? null));
@@ -173,6 +173,7 @@
     const s = state.settings;
     settingIds.forEach((k) => ($(k).value = s[k]));
     $('startersEachHalf').checked = s.startersEachHalf;
+    $('balancePositions').checked = s.balancePositions;
     $('title').value = state.title || '';
     const key = `${s.periods}x${s.periodLen}`;
     $('preset').value = [...$('preset').options].some((o) => o.value === key) ? key : 'custom';
@@ -195,6 +196,10 @@
   );
   $('startersEachHalf').addEventListener('change', (e) => {
     state.settings.startersEachHalf = e.target.checked;
+    changed();
+  });
+  $('balancePositions').addEventListener('change', (e) => {
+    state.settings.balancePositions = e.target.checked;
     changed();
   });
   $('title').addEventListener('input', (e) => {
@@ -226,6 +231,7 @@
       );
       tr.querySelector('.pos').addEventListener('change', (e) => {
         p.pos = e.target.value;
+        if (state.settings.balancePositions && lineupValid() && !undoStack.length) { changed(); return; }
         // Re-sort rows by position but keep who plays when (preserves manual edits).
         if (lineupValid()) {
           const g = playerGrid();

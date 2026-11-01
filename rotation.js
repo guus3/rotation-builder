@@ -544,24 +544,30 @@
     // who play the whole game always start; if the positions or the lineup size don't allow all picked
     // starters, the ones with the most minutes start.
     // Picked finishers are on court at the end of the game, with the same rules.
-    const pickLineup = (flag) => {
-      const out = [], drop = [];
-      const picked = players.map((p, i) => (p[flag] && targets[i] > 0 ? i : -1)).filter((i) => i >= 0);
-      if (!picked.length) return [out, drop];
-      const memb = membership(groups, limits || [], players.length);
-      const need = limits && limits.map(([, cap], l) =>
-        Math.max(0, targets.reduce((a, t, i) => a + (memb[i].includes(l) ? t : 0), 0) - cap * (T - 1)));
-      const pk = picker(N, limits, memb, limits && limitTree(limits), need, targets.map((t) => t > 0));
-      targets.forEach((t, i) => { if (t >= T) pk.add(i, true); });
-      picked.sort((a, b) => targets[b] - targets[a] || a - b).forEach((i) => {
-        if (pk.chosen.includes(i) || pk.add(i)) out.push(i);
-        else drop.push(i);
-      });
-      return [out.sort((a, b) => a - b), drop];
-    };
+    const pickLineup = (flag) =>
+      pickFive({ targets, groups, limits }, players.map((p, i) => (p[flag] ? i : -1)).filter((i) => i >= 0), T, N);
     const [starters, dropped] = pickLineup('starter');
     const [finishers, finDropped] = pickLineup('finisher');
     return { targets, posVals, usePos, mode: plan.mode, groups, rows, limits, starters, dropped, finishers, finDropped };
+  }
+
+  // Which picked players (indexes) fit one lineup under the plan's minutes and position limits:
+  // [on court, dropped]. Players with 0 minutes are ignored; whole-game players are always on court.
+  function pickFive(plan, picked, T, N) {
+    const { targets, groups, limits } = plan;
+    const out = [], drop = [];
+    picked = picked.filter((i) => targets[i] > 0);
+    if (!picked.length) return [out, drop];
+    const memb = membership(groups, limits || [], targets.length);
+    const need = limits && limits.map(([, cap], l) =>
+      Math.max(0, targets.reduce((a, t, i) => a + (memb[i].includes(l) ? t : 0), 0) - cap * (T - 1)));
+    const pk = picker(N, limits, memb, limits && limitTree(limits), need, targets.map((t) => t > 0));
+    targets.forEach((t, i) => { if (t >= T) pk.add(i, true); });
+    picked.slice().sort((a, b) => targets[b] - targets[a] || a - b).forEach((i) => {
+      if (pk.chosen.includes(i) || pk.add(i)) out.push(i);
+      else drop.push(i);
+    });
+    return [out.sort((a, b) => a - b), drop];
   }
 
   function buildRotation(players, cfg, opts = {}) {
@@ -753,7 +759,7 @@
 
   const api = {
     normalizeTargets, planTargets, buildRotation, subEvents, analyze, assignSlots, makePosCost, adjustMinutes,
-    POS_VAL, POS_GROUP, POS_MODES, groupOf, badSlot, rowOk, limitsOf,
+    POS_VAL, POS_GROUP, POS_MODES, groupOf, badSlot, rowOk, limitsOf, pickFive,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.Rotation = api;

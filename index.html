@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Rotation Builder</title>
   <meta name="description" content="Enter player minutes, get a full basketball rotation and substitution sheet." />
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏀</text></svg>" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='46' fill='%23e4572e'/><path d='M4 50h92M50 4v92M18 18c18 18 18 46 0 64M82 18c-18 18-18 46 0 64' fill='none' stroke='%231d1d1f' stroke-width='5'/></svg>" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <header>
-    <h1>🏀 Rotation Builder</h1>
+    <h1>Rotation Builder</h1>
     <p class="tag">Enter minutes → get the rotation.</p>
   </header>
 
@@ -59,12 +59,12 @@
       <div class="teambar">
         <label for="teamSel">Team</label>
         <select id="teamSel" aria-label="Team template"></select>
-        <button id="saveTeam" class="secondary" title="Save these players as a team you can pick every game">💾 Save team</button>
-        <button id="delTeam" class="ghost" title="Delete this team" hidden>🗑</button>
+        <button id="saveTeam" class="secondary" title="Save these players as a team you can pick every game">Save team</button>
+        <button id="delTeam" class="ghost" title="Delete this team" hidden>Delete</button>
       </div>
-      <p class="hint">Save your players once as a team, then pick it every game and untick ✓ who's not playing. Leave minutes empty to split the rest evenly. ⭐ = starter, 🏁 = finisher, on court at the end (pick 5, or just the ones you want). Positions are kept: guards (PG, SG, G) only play guard, forwards (SF, PF, F) forward, centres C. '–' = plays anywhere.</p>
+      <p class="hint">Save your players once as a team, then pick it every game and untick who's not playing. Leave minutes empty to split the rest evenly. Start / Finish: who is on court at the start and at the end of the game – pick 5, or just the ones you want. Positions are kept: guards (PG, SG, G) only play guard, forwards (SF, PF, F) forward, centres C. '–' = plays anywhere.</p>
       <table class="roster">
-        <thead><tr><th title="Playing this game">In</th><th>#</th><th>Name</th><th>Pos</th><th>Min</th><th title="Starter">⭐</th><th title="Finisher – on court at the end of the game">🏁</th><th></th></tr></thead>
+        <thead><tr><th title="Playing this game">In</th><th>#</th><th>Name</th><th>Pos</th><th>Min</th><th class="c-pick" title="On court at the start">Start<small id="starterCount"></small></th><th class="c-pick" title="On court at the end of the game">Finish<small id="finisherCount"></small></th><th></th></tr></thead>
         <tbody id="rosterBody"></tbody>
       </table>
       <div class="row buttons">
@@ -77,6 +77,7 @@
         <textarea id="pasteText" rows="6" placeholder="One player per line, e.g.&#10;4 Mikko PG 30&#10;11 Jussi C 25&#10;Ville"></textarea>
         <button id="pasteApply">Use this list</button>
       </div>
+      <div id="picks" class="picks"></div>
       <div id="minuteStatus" class="status"></div>
       <button id="buildBtn" class="big">Build rotation</button>
       <div id="error" class="error" hidden></div>
@@ -87,14 +88,14 @@
       <div class="result-head">
         <h2><span class="step">3</span> Rotation</h2>
         <div class="buttons">
-          <button id="undoBtn" class="secondary" hidden>↶ Undo</button>
-          <button id="rebuildBtn" class="secondary" title="Build a different variation">🔀 New version</button>
-          <button id="shareBtn">🔗 Share link</button>
-          <button id="imageBtn">🖼️ Image</button>
-          <button id="printBtn" class="secondary">🖨️ Print</button>
+          <button id="undoBtn" class="secondary" hidden>Undo</button>
+          <button id="rebuildBtn" class="secondary" title="Build a different variation">New version</button>
+          <button id="shareBtn">Share link</button>
+          <button id="imageBtn">Save image</button>
+          <button id="printBtn" class="secondary">Print</button>
         </div>
       </div>
-      <p class="hint noprint">Tap a bar to change who plays there. Drag the white line between two players to move the sub, or drag a bar sideways. Use − / + below to change a player's minutes – the others adjust automatically (📌 = keep fixed).</p>
+      <p class="hint noprint">Tap a bar to change who plays there. Drag the white line between two players to move the sub, or drag a bar sideways. Use − / + below to change a player's minutes – the others adjust automatically (the lock keeps a player's minutes fixed).</p>
       <div id="lineup" class="lu-cards"></div>
 
       <div id="minutes" class="minutes noprint"></div>
@@ -111,7 +112,7 @@
   </main>
 
   <footer class="noprint">Saved automatically in this browser. Shared links open an editable copy.</footer>
-  <div id="toast" class="toast" hidden></div>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
   <dialog id="editDlg">
     <form method="dialog" class="dlg">

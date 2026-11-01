@@ -38,6 +38,7 @@
   const posRows = () => N() === 5 && state.settings.balancePositions && active().some((p) => p.pos in POS_VAL);
   const slotLabel = (j) => (posRows() ? POS[j] : String(j + 1));
   const GROUPS = ['guards', 'forwards', 'centres'];
+  const LOCK_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2" fill="currentColor"/><path d="M8 11V8a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="2.2"/></svg>';
   const GROUP_ONE = ['guard', 'forward', 'centre'];
   const ROW_NAMES = ['guard', 'forward', 'C'];
   const listAnd = (a) => (a.length < 2 ? a.join('') : `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}`);
@@ -305,8 +306,8 @@
         <td><input class="name" value="${esc(p.name)}" data-f="name" placeholder="Name" /></td>
         <td><select class="pos" data-f="pos">${POS_OPTIONS.map((o) => `<option value="${o}" ${o === (p.pos || '') ? 'selected' : ''}>${o || '–'}</option>`).join('')}</select></td>
         <td><input class="min" type="number" inputmode="numeric" min="0" max="${S()}" value="${esc(p.target)}" placeholder="auto" data-f="target" /></td>
-        <td><button class="star ${p.starter ? 'on' : ''}" aria-label="Starter" title="Starter">★</button></td>
-        <td><button class="fin ${p.finisher ? 'on' : ''}" aria-label="Finisher" title="Finisher – on court at the end of the game">🏁</button></td>
+        <td class="c-pick"><button class="pick star" data-flag="starter" aria-label="Starter"></button></td>
+        <td class="c-pick"><button class="pick fin" data-flag="finisher" aria-label="Finisher – on court at the end of the game"></button></td>
         <td><button class="del" aria-label="Remove">✕</button></td>`;
       tr.querySelectorAll('input').forEach((inp) =>
         inp.addEventListener('input', () => {
@@ -332,20 +333,18 @@
         renderRoster();
         changed();
       });
-      tr.querySelector('.star').addEventListener('click', (e) => {
-        p.starter = !p.starter;
-        e.currentTarget.classList.toggle('on', p.starter);
-        renderStatus();
-        changed();
-      });
-      tr.querySelector('.fin').addEventListener('click', (e) => {
-        p.finisher = !p.finisher;
-        e.currentTarget.classList.toggle('on', p.finisher);
-        renderStatus();
-        changed();
-      });
+      tr.querySelectorAll('.pick').forEach((btn) =>
+        btn.addEventListener('click', () => {
+          const f = btn.dataset.flag;
+          // A pick that doesn't fit isn't made; the reason is shown instead (also on touch screens).
+          if (!p[f] && btn.dataset.block) { toast(btn.dataset.block); return; }
+          p[f] = !p[f];
+          renderStatus();
+          changed();
+        })
+      );
       tr.querySelector('.del').addEventListener('click', () => {
-        if (p.name && !/^Player \d+$/.test(p.name) && !confirm(`Remove ${p.name} from the list?\n(If they just miss this game, untick ✓ instead.)`)) return;
+        if (p.name && !/^Player \d+$/.test(p.name) && !confirm(`Remove ${p.name} from the list?\n(If they just miss this game, untick them in the In column instead.)`)) return;
         state.players = state.players.filter((x) => x !== p);
         renderRoster();
         changed();
@@ -370,10 +369,9 @@
     return [...acc.values()].sort((a, b) => b.min - a.min);
   }
 
-  // Why picked starter (or finisher) i (index in active()) can't start (finish).
-  function dropReason(plan, i, finish) {
+  // Why picked starter (or finisher) i (index in active()) can't start (finish). list: who is on court instead.
+  function dropReason(plan, i, finish, list = finish ? plan.finishers : plan.starters) {
     const act = active();
-    const list = finish ? plan.finishers : plan.starters;
     const forced = plan.targets.map((t, k) => (t >= S() && !list.includes(k) ? k : -1)).filter((k) => k >= 0);
     const onCourt = [...list, ...forced];
     const g = plan.groups ? plan.groups[i] : -1;
@@ -385,6 +383,70 @@
     if (forced.length) return `${listAnd(forced.map((k) => esc(shortName(act[k]))))} play${forced.length > 1 ? '' : 's'} the whole game`;
     return `only ${N()} can ${finish ? 'finish' : 'start'}`;
   }
+
+  const PICK = {
+    starter: { one: 'starter', verb: 'start', lineup: 'Starting', none: 'Not picked – picked automatically' },
+    finisher: { one: 'finisher', verb: 'finish', lineup: 'Closing', none: 'Not picked – the players with the most minutes' },
+  };
+  // Why player i (index in active()) can't be picked as a starter / finisher now (null = can be picked).
+  function pickBlock(plan, i, flag) {
+    const act = active(), w = PICK[flag];
+    const picked = act.map((p, k) => (p[flag] ? k : -1)).filter((k) => k >= 0);
+    if (picked.length >= N()) return `${N()} ${w.one}s already picked – untick one first`;
+    if (!plan) return null;
+    const who = shortName(act[i]);
+    if (!(plan.targets[i] > 0)) return `${who} gets 0 minutes`;
+    const [on, before] = Rotation.pickFive(plan, picked, S(), N());
+    const [, after] = Rotation.pickFive(plan, [...picked, i], S(), N());
+    if (after.length <= before.length) return null;
+    // dropReason is HTML (escaped names); the reason is shown as plain text.
+    const why = new DOMParser().parseFromString(dropReason(plan, i, flag === 'finisher', on), 'text/html').body.textContent;
+    return `${who} can't ${w.verb} – ${why}`;
+  }
+  // Pick buttons, column counters and the starting / closing five summary.
+  function renderPicks(plan) {
+    const act = active(), idx = actIndex();
+    document.querySelectorAll('#rosterBody tr').forEach((tr) => {
+      const p = byId(Number(tr.dataset.id));
+      tr.querySelectorAll('.pick').forEach((btn) => {
+        const f = btn.dataset.flag, on = !!p[f];
+        const block = !on && !p.out && idx.has(p.id) ? pickBlock(plan, idx.get(p.id), f) : null;
+        btn.classList.toggle('on', on);
+        btn.classList.toggle('blocked', !!block);
+        btn.setAttribute('aria-pressed', on);
+        btn.setAttribute('aria-disabled', !!block);
+        btn.textContent = on ? '✓' : '';
+        btn.title = block || (on ? `Picked – tap to untick` : `Tap to pick as ${PICK[f].one}`);
+        if (block) btn.dataset.block = block;
+        else delete btn.dataset.block;
+      });
+    });
+    const parts = ['starter', 'finisher'].map((f) => {
+      const w = PICK[f], picked = act.filter((p) => p[f]);
+      $(`${f}Count`).textContent = `${picked.length}/${N()}`;
+      $(`${f}Count`).classList.toggle('full', picked.length === N());
+      const names = picked.map((p) => `${esc(shortName(p))}${p.pos ? ` <small>${esc(p.pos)}</small>` : ''}`).join(', ');
+      const rest = N() - picked.length;
+      const more = picked.length && rest > 0 ? ` <small>+ ${rest} ${f === 'starter' ? 'picked automatically' : 'with the most minutes'}</small>` : '';
+      let btns = '';
+      const same = act.every((p) => !!p.starter === !!p.finisher);
+      if (f === 'finisher' && act.some((p) => p.starter) && !same) btns += '<button type="button" class="secondary small" data-pick="copy">Same as starters</button>';
+      if (picked.length) btns += `<button type="button" class="ghost small" data-pick="clear" data-flag="${f}">Clear</button>`;
+      return `<div class="pick-line"><span class="pick-lbl">${w.lineup} ${N()}</span><span class="pick-names">${names ? names + more : `<small>${w.none}</small>`}</span><span class="pick-btns">${btns}</span></div>`;
+    });
+    $('picks').innerHTML = parts.join('');
+  }
+  $('picks').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-pick]');
+    if (!b) return;
+    const act = active();
+    if (b.dataset.pick === 'copy') {
+      act.forEach((p) => (p.finisher = !!p.starter));
+      toast('The starters now also finish the game');
+    } else act.forEach((p) => (p[b.dataset.flag] = false));
+    renderStatus();
+    changed();
+  });
 
   function renderStatus() {
     const s = state.settings;
@@ -402,7 +464,7 @@
     if (outN) parts.push(`${act.length} playing, ${outN} out`);
     let cls = 'ok';
     if (blanks === 0) {
-      if (sum === need) parts.push(`✅ ${sum} / ${need} minutes assigned`);
+      if (sum === need) parts.push(`${sum} / ${need} minutes assigned`);
       else { cls = 'warn'; parts.push(`${sum} / ${need} minutes — will be ${sum < need ? 'scaled up' : 'scaled down'} to fit`); }
     } else if (sum > need) {
       cls = 'warn';
@@ -417,21 +479,19 @@
     const dropped = fresh ? plan.dropped : [];
     if (starters > s.onCourt) {
       cls = 'warn';
-      parts.push(`⭐ ${starters} starters picked – only ${s.onCourt} can start${dropped.length ? ` (${listAnd(dropped.map((i) => nm(act[i])))} won't)` : ''}`);
+      parts.push(`${starters} starters picked – only ${s.onCourt} can start${dropped.length ? ` (${listAnd(dropped.map((i) => nm(act[i])))} won't)` : ''}`);
     } else {
-      if (starters && starters < s.onCourt) parts.push(`⭐ ${starters} starter${starters > 1 ? 's' : ''} picked – the rest are picked automatically`);
       if (dropped.length) cls = 'warn';
-      dropped.forEach((i) => parts.push(`⭐ ${nm(act[i])} can't start – ${dropReason(plan, i)}`));
+      dropped.forEach((i) => parts.push(`${nm(act[i])} can't start – ${dropReason(plan, i)}`));
     }
     const finishers = act.filter((p) => p.finisher).length;
     const finDropped = fresh ? plan.finDropped : [];
     if (finishers > s.onCourt) {
       cls = 'warn';
-      parts.push(`🏁 ${finishers} finishers picked – only ${s.onCourt} can finish${finDropped.length ? ` (${listAnd(finDropped.map((i) => nm(act[i])))} won't)` : ''}`);
+      parts.push(`${finishers} finishers picked – only ${s.onCourt} can finish${finDropped.length ? ` (${listAnd(finDropped.map((i) => nm(act[i])))} won't)` : ''}`);
     } else {
-      if (finishers && finishers < s.onCourt) parts.push(`🏁 ${finishers} finisher${finishers > 1 ? 's' : ''} picked – the rest are the players with the most minutes`);
       if (finDropped.length) cls = 'warn';
-      finDropped.forEach((i) => parts.push(`🏁 ${nm(act[i])} can't finish – ${dropReason(plan, i, true)}`));
+      finDropped.forEach((i) => parts.push(`${nm(act[i])} can't finish – ${dropReason(plan, i, true)}`));
     }
     // Picked finishers who still aren't on court at the end (hand edits, or minutes and positions that clash).
     if (lineupValid() && finishers) {
@@ -440,7 +500,7 @@
       const miss = act.filter((p) => p.finisher && !skip.has(p.id) && !last.includes(p.id));
       if (miss.length) {
         cls = 'warn';
-        parts.push(`🏁 ${listAnd(miss.map(nm))} ${miss.length > 1 ? "aren't" : "isn't"} on court at the end${state.edited ? '' : ' – the minutes and positions don\'t allow it'}`);
+        parts.push(`Finisher${miss.length > 1 ? 's' : ''} ${listAnd(miss.map(nm))} ${miss.length > 1 ? "aren't" : "isn't"} on court at the end${state.edited ? '' : ' – the minutes and positions don\'t allow it'}`);
       }
     }
 
@@ -452,14 +512,14 @@
       const zero = act.map((p, i) => i).filter((i) => isBlank(act[i].target) && plan.targets[i] === 0 && plain[i] > 0);
       if (zero.length) {
         cls = 'warn';
-        parts.push(`⚠️ ${listAnd(zero.map((i) => nm(act[i])))} get${zero.length > 1 ? '' : 's'} 0 min – the typed minutes already fill the ${listAnd([...new Set(zero.map((i) => GROUP_ONE[plan.groups[i]]))])} spots`);
+        parts.push(`${listAnd(zero.map((i) => nm(act[i])))} get${zero.length > 1 ? '' : 's'} 0 min – the typed minutes already fill the ${listAnd([...new Set(zero.map((i) => GROUP_ONE[plan.groups[i]]))])} spots`);
       }
     }
     const rep = posReport();
     const bad = rep.filter((o) => !o.allowed);
     if (bad.length) {
       cls = 'warn';
-      parts.push(`⚠️ Out of position: ${bad.slice(0, 4).map((o) => `${nm(byId(o.id))} (${esc(byId(o.id).pos)}) at ${ROW_NAMES[o.r]} ${o.min} min`).join(', ')}${bad.length > 4 ? ', …' : ''} – 🔀 New version fixes this`);
+      parts.push(`Out of position: ${bad.slice(0, 4).map((o) => `${nm(byId(o.id))} (${esc(byId(o.id).pos)}) at ${ROW_NAMES[o.r]} ${o.min} min`).join(', ')}${bad.length > 4 ? ', …' : ''} – New version fixes this`);
     }
     const help = [0, 1, 2].map((r) => rep.filter((o) => o.allowed && o.r === r)).filter((c) => c.length);
     if (help.length) {
@@ -480,12 +540,13 @@
     }
     if (plan && plan.usePos && s.onCourt === 5 && plan.mode === 'soft') {
       cls = 'warn';
-      parts.push("⚠️ These positions can't fill all 5 spots – positions only guide the lineups");
+      parts.push("These positions can't fill all 5 spots – positions only guide the lineups");
     }
     if (act.length < s.onCourt) { cls = 'warn'; parts.push(`Need at least ${s.onCourt} players`); }
     const el = $('minuteStatus');
     el.className = `status ${cls}`;
     el.innerHTML = parts.join('<br>');
+    renderPicks(plan);
     // Show what "auto" will be for each empty minutes box.
     document.querySelectorAll('#rosterBody tr').forEach((tr) => {
       const i = act.findIndex((p) => p.id === Number(tr.dataset.id));
@@ -576,7 +637,7 @@
     renderRoster();
     renderResult();
     commit();
-    toast(`${team.name} loaded – untick ✓ for players who are out`);
+    toast(`${team.name} loaded – untick players who are out`);
   });
   $('saveTeam').addEventListener('click', () => {
     if (!state.players.length) { toast('Add players first'); return; }
@@ -647,7 +708,7 @@
       commit();
       renderResult();
       renderStatus();
-      if (note || wasEdited) toast(`${note || 'Rotation rebuilt'}${wasEdited ? ' – ↶ Undo brings your changes back' : ''}`);
+      if (note || wasEdited) toast(`${note || 'Rotation rebuilt'}${wasEdited ? ' – Undo brings your changes back' : ''}`);
     } catch (e) {
       err.textContent = e.message;
       err.hidden = false;
@@ -796,7 +857,7 @@
         return `<div class="mrow ${pinned ? 'pinned' : ''}" data-id="${p.id}">
           <i style="background:${colorOf(p.id)}"></i>
           <span class="nm">${esc(shortName(p))}</span>
-          <button class="pin" title="${pinned ? 'Fixed – tap to let it change automatically' : 'Tap to keep these minutes fixed'}" aria-label="Pin">📌</button>
+          <button class="pin" title="${pinned ? 'Locked – tap to let it change automatically' : 'Tap to lock these minutes'}" aria-label="Lock minutes" aria-pressed="${pinned}">${LOCK_ICON}</button>
           <button class="mstep" data-d="-1" aria-label="One minute less">−</button>
           <input class="mval" type="number" inputmode="numeric" min="0" max="${S()}" value="${mp[p.id]}" aria-label="Minutes" />
           <button class="mstep" data-d="1" aria-label="One minute more">+</button>
@@ -829,7 +890,7 @@
       .filter((p) => p.id !== id && after[p.id] !== before[p.id])
       .map((p) => `${shortName(p)} ${after[p.id] > before[p.id] ? '+' : ''}${after[p.id] - before[p.id]}`);
     const p = byId(id);
-    if (after[id] !== newVal) toast(`${shortName(p)}: could only get ${after[id]} min (unpin 📌 others to free minutes)`);
+    if (after[id] !== newVal) toast(`${shortName(p)}: could only get ${after[id]} min (unlock others to free minutes)`);
     else toast(`${shortName(p)} ${after[id]} min${diffs.length ? ' · ' + diffs.join(', ') : ''}`);
   }
 

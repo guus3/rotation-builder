@@ -10,7 +10,7 @@
 
   const defaults = () => ({
     title: '',
-    settings: { periods: 4, periodLen: 10, subEvery: 2, maxStint: 6, minRest: 2, onCourt: 5, startersEachHalf: true, balancePositions: true },
+    settings: { periods: 4, periodLen: 10, subEvery: 4, maxStint: 6, minRest: 2, onCourt: 5, startersEachHalf: true, balancePositions: true },
     players: [],
     lineup: null, // lineup[minute][slot] = player id
     targets: null, // { playerId: minutes }
@@ -286,6 +286,11 @@
   $('balancePositions').addEventListener('change', (e) => {
     state.settings.balancePositions = e.target.checked;
     changed();
+  });
+  $('balanceInfoBtn').addEventListener('click', (e) => {
+    const box = $('balanceInfo');
+    box.hidden = !box.hidden;
+    e.currentTarget.setAttribute('aria-expanded', String(!box.hidden));
   });
   $('title').addEventListener('input', (e) => {
     state.title = e.target.value;

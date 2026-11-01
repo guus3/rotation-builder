@@ -41,7 +41,7 @@
               <option value="1">1 min</option>
               <option value="2">2 min</option>
               <option value="3">3 min</option>
-              <option value="4">4 min</option>
+              <option value="4" selected>4 min</option>
               <option value="5">5 min</option>
             </select>
           </label>
@@ -49,8 +49,12 @@
           <label>Min rest before return <input type="number" id="minRest" min="0" max="20" /></label>
           <label>Players on court <input type="number" id="onCourt" min="1" max="7" /></label>
           <label class="check"><input type="checkbox" id="startersEachHalf" /> Starters start 2nd half</label>
-          <label class="check"><input type="checkbox" id="balancePositions" /> Keep players in their positions</label>
+          <span class="check-info">
+            <label class="check"><input type="checkbox" id="balancePositions" /> Keep players in their positions</label>
+            <button type="button" id="balanceInfoBtn" class="info-btn" aria-label="What does Keep players in their positions mean?" aria-expanded="false" aria-controls="balanceInfo">ⓘ</button>
+          </span>
         </div>
+        <p id="balanceInfo" class="hint info-box" hidden><b>Keep players in their positions:</b> guards (PG, SG, G) play guard rows, forwards (SF, PF, F) play forward rows, and centres play the C row. Players without a position can play anywhere. If the roster cannot fill a position, the app may use the nearest group and adjust minutes; it explains the change.</p>
       </details>
     </section>
 

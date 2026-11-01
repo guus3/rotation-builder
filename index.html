@@ -87,17 +87,28 @@
             <li><b>Start / Finish</b> – who is on court at the start and at the end of the game. Pick 5, or just the ones you want; the rest are picked automatically.</li>
             <li><b>Pos</b> – players stay in position: guards (PG, SG, G) only play guard, forwards (SF, PF, F) forward, centres C. '–' plays anywhere.</li>
             <li><b>Team</b> – save your players once, then pick the team every game.</li>
+            <li><b>Sort</b> – tap Name, Pos, Min, Start or Finish to sort. Tap again to reverse, and a third time to restore the original order. Out players stay at the bottom.</li>
+            <li><b>Reset</b> – keep names and positions, bring everyone back in, and clear minutes, Start/Finish picks and the rotation. Saved teams and rotations stay.</li>
           </ul>
         </details>
       </div>
       <table class="roster">
-        <thead><tr><th title="Playing this game">In</th><th>Name</th><th>Pos</th><th>Min</th><th class="c-pick" title="On court at the start">Start<small id="starterCount"></small></th><th class="c-pick" title="On court at the end of the game">Finish<small id="finisherCount"></small></th><th></th></tr></thead>
+        <thead><tr>
+          <th title="Playing this game">In</th>
+          <th aria-sort="none"><button type="button" class="roster-sort" data-sort="name" data-label="Name">Name</button></th>
+          <th aria-sort="none"><button type="button" class="roster-sort" data-sort="pos" data-label="Pos">Pos</button></th>
+          <th aria-sort="none"><button type="button" class="roster-sort" data-sort="target" data-label="Min">Min</button></th>
+          <th class="c-pick" aria-sort="none" title="On court at the start"><button type="button" class="roster-sort" data-sort="starter" data-label="Start">Start<small id="starterCount"></small></button></th>
+          <th class="c-pick" aria-sort="none" title="On court at the end of the game"><button type="button" class="roster-sort" data-sort="finisher" data-label="Finish">Finish<small id="finisherCount"></small></button></th>
+          <th></th>
+        </tr></thead>
         <tbody id="rosterBody"></tbody>
       </table>
       <div class="row buttons">
         <button id="addPlayer" class="secondary">+ Add player</button>
         <button id="pasteBtn" class="secondary">Paste list</button>
         <button id="evenBtn" class="secondary">Even minutes</button>
+        <button id="resetBtn" class="secondary">Reset</button>
         <button id="clearBtn" class="ghost">Clear</button>
       </div>
       <div id="pasteBox" hidden>

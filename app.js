@@ -33,6 +33,7 @@
   let uid = Date.now();
   let undoStack = [];
   let rotationId = null;
+  let rosterSort = { field: null, direction: 1 };
 
   // ---------- Helpers ----------
   const S = () => state.settings.periods * state.settings.periodLen;
@@ -320,10 +321,60 @@
   });
 
   // ---------- Roster ----------
+  const SORT_FIRST = { name: 1, pos: 1, target: -1, starter: -1, finisher: -1 };
+  function sortRoster(plan = currentPlan()) {
+    const body = $('rosterBody');
+    if (body.contains(document.activeElement) && document.activeElement.matches('input')) return;
+    const idx = actIndex();
+    const value = (p) => {
+      if (rosterSort.field === 'name') return p.name || noName(p);
+      if (rosterSort.field === 'pos') return posValOf(p);
+      if (rosterSort.field === 'target') {
+        if (p.out) return 0;
+        if (!isBlank(p.target)) return Number(p.target);
+        return !state.edited ? plan?.targets[idx.get(p.id)] ?? null : null;
+      }
+      return Number(!!p[rosterSort.field]);
+    };
+    const rows = [...body.children].sort((a, b) => {
+      const pa = byId(Number(a.dataset.id)), pb = byId(Number(b.dataset.id));
+      const group = Number(pa.out) - Number(pb.out);
+      if (group || !rosterSort.field) return group || state.players.indexOf(pa) - state.players.indexOf(pb);
+      const va = value(pa), vb = value(pb);
+      if (va == null || vb == null) return Number(va == null) - Number(vb == null) || state.players.indexOf(pa) - state.players.indexOf(pb);
+      const cmp = typeof va === 'string' ? va.localeCompare(vb, 'fi', { numeric: true, sensitivity: 'base' }) : va === vb ? 0 : va < vb ? -1 : 1;
+      return cmp * rosterSort.direction || state.players.indexOf(pa) - state.players.indexOf(pb);
+    });
+    const focused = document.activeElement;
+    rows.forEach((tr, i) => { if (body.children[i] !== tr) body.insertBefore(tr, body.children[i] || null); });
+    if (body.contains(focused) && document.activeElement !== focused) focused.focus({ preventScroll: true });
+  }
+  function renderSortHeaders() {
+    document.querySelectorAll('.roster-sort').forEach((button) => {
+      const field = button.dataset.sort;
+      const selected = rosterSort.field === field;
+      button.closest('th').setAttribute('aria-sort', selected ? rosterSort.direction === 1 ? 'ascending' : 'descending' : 'none');
+      const first = SORT_FIRST[field];
+      const next = selected ? -first : first;
+      button.setAttribute('aria-label', selected && rosterSort.direction !== first ? 'Restore original player order' : `Sort by ${button.dataset.label} ${next === 1 ? 'ascending' : 'descending'}`);
+    });
+  }
+  document.querySelectorAll('.roster-sort').forEach((button) => button.addEventListener('click', () => {
+    const field = button.dataset.sort;
+    const first = SORT_FIRST[field];
+    rosterSort = rosterSort.field !== field ? { field, direction: first } :
+      rosterSort.direction === first ? { field, direction: -first } : { field: null, direction: 1 };
+    button.focus({ preventScroll: true });
+    renderSortHeaders();
+    sortRoster();
+  }));
+  $('rosterBody').addEventListener('focusout', (e) => {
+    if (!$('rosterBody').contains(e.relatedTarget)) queueMicrotask(() => sortRoster());
+  });
   function renderRoster() {
     const body = $('rosterBody');
     body.innerHTML = '';
-    [...state.players].sort((a, b) => Number(a.out) - Number(b.out)).forEach((p) => {
+    state.players.forEach((p) => {
       const tr = document.createElement('tr');
       tr.dataset.id = p.id;
       tr.className = p.out ? 'is-out' : '';
@@ -378,6 +429,8 @@
       });
       body.appendChild(tr);
     });
+    $('resetBtn').disabled = !state.players.length;
+    renderSortHeaders();
     renderStatus();
   }
 
@@ -580,13 +633,13 @@
       const inp = tr.querySelector('.min');
       if (inp) inp.placeholder = fresh && i >= 0 ? `~${plan.targets[i]}` : 'auto';
     });
+    sortRoster(plan);
   }
 
   $('addPlayer').addEventListener('click', () => {
     state.players.push({ id: ++uid, num: '', name: '', target: '', starter: false, finisher: false, pos: '', out: false });
     renderRoster();
-    const names = document.querySelectorAll('#rosterBody .name');
-    names[names.length - 1].focus();
+    $('rosterBody').querySelector(`tr[data-id="${uid}"] .name`).focus();
     changed();
   });
   $('evenBtn').addEventListener('click', () => {
@@ -594,6 +647,36 @@
     state.pinned = [];
     renderRoster();
     changed();
+  });
+  $('resetBtn').addEventListener('click', () => {
+    if (!state.players.length) { toast('Add players first'); return; }
+    if (!confirm('Reset players and minutes for this game? Names and positions stay. Everyone is back in, minutes become automatic, and Start/Finish picks and the rotation are cleared. Saved teams and rotations stay.')) return;
+    const next = {
+      ...state,
+      players: state.players.map((p) => ({ ...p, target: '', out: false, starter: false, finisher: false })),
+      lineup: null, targets: null, pinned: [], edited: false, mode: null, seed: 1,
+    };
+    try {
+      save(next);
+    } catch (e) {
+      console.warn(e);
+      toast('Could not reset players. Browser storage may be full or unavailable.');
+      return;
+    }
+    clearTimeout(debounce);
+    pending = false;
+    state = next;
+    undoStack = [];
+    rosterSort = { field: null, direction: 1 };
+    rotationId = null;
+    $('error').hidden = true;
+    $('pasteBox').hidden = true;
+    $('pasteText').value = '';
+    renderRotations();
+    renderRoster();
+    renderResult();
+    commit();
+    toast('Players and minutes reset – build a rotation when ready');
   });
   $('clearBtn').addEventListener('click', () => {
     if (!confirm('Clear all players?')) return;

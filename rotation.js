@@ -114,12 +114,26 @@
     return x && roundTargets(x, T, N, groups, limits);
   }
 
-  // The last minutes of the game go to the players with the most minutes ("closers").
-  // gap = how many minutes a player is below the N-th highest; small differences are ignored.
+  // The last minutes of the game go to the picked finishers, then to the players with the most minutes
+  // ("closers"). gap = how many minutes a player is below the N-th highest of the rest; small differences are
+  // ignored. Picked finishers (fin) have no gap.
   const closeLenOf = (cfg) => Math.min(4, Math.ceil(cfg.periodLen / 3));
-  function closerGaps(mins, N) {
-    const nth = mins.slice().sort((a, b) => b - a)[N - 1] ?? 0;
-    return mins.map((m) => Math.max(0, nth - m - 2));
+  function closerGaps(mins, N, fin = []) {
+    const k = N - fin.length;
+    const nth = k > 0 ? mins.filter((_, i) => !fin.includes(i)).sort((a, b) => b - a)[k - 1] ?? 0 : Infinity;
+    return mins.map((m, i) => (fin.includes(i) ? 0 : nth === Infinity ? 10 : Math.max(0, nth - m - 2)));
+  }
+  // Minutes at the end of the game each picked finisher must be on court (0 = not a finisher). A finisher who
+  // also starts keeps the minutes needed for the starting lineups.
+  function finishLens(cfg, targets, starters, finishers) {
+    const S = cfg.periods * cfg.periodLen;
+    const half = cfg.periods % 2 === 0 ? (cfg.periods / 2) * cfg.periodLen : -1;
+    const starts = 1 + (cfg.startersEachHalf && half > 0 ? 1 : 0);
+    return targets.map((t, i) => {
+      if (!finishers.includes(i)) return 0;
+      const keep = starters.includes(i) && t < S ? starts : 0;
+      return Math.max(0, Math.min(closeLenOf(cfg), t - keep));
+    });
   }
 
   const POS_VAL = { PG: 0, SG: 1, SF: 2, PF: 3, C: 4, G: 0.5, F: 2.5 };
@@ -269,13 +283,30 @@
     const grid = targets.map(() => new Array(S).fill(0));
     const halfSlot = periods % 2 === 0 ? (periods / 2) * periodLen : -1;
     const C = closeLenOf(cfg);
-    const gap = closerGaps(targets, N);
+    const fin = cfg.finishers || [];
+    const gap = closerGaps(targets, N, fin);
+    const finLen = cfg.finLen || targets.map(() => 0);
     // Strict positions: a limit's players can't outnumber its rows, and when their minutes no longer fit into
     // the rest of the game some of them must be on court now.
     const lim = cfg.limits;
     const memb = lim ? membership(cfg.groups, lim, n) : null;
     const parent = lim ? limitTree(lim) : null;
     const remL = lim ? lim.map((_, l) => targets.reduce((a, t, i) => a + (memb[i].includes(l) ? t : 0), 0)) : null;
+    // hardFin: at the end the finishers' spots are taken. blockedAfter[i][s] = minutes from s on in which player
+    // i can't get on court because the finishers fill every spot i could take.
+    let blockedAfter = null;
+    if (p.hardFin) {
+      blockedAfter = targets.map(() => new Array(S + 1).fill(0));
+      for (let s = S - 1; s >= 0; s--) {
+        const F = [];
+        for (let i = 0; i < n; i++) if (finLen[i] && s >= S - finLen[i]) F.push(i);
+        for (let i = 0; i < n; i++) {
+          const blocked = !finLen[i] && F.length > 0 &&
+            (F.length >= N || (lim && memb[i].some((l) => F.filter((f) => memb[f].includes(l)).length >= lim[l][1])));
+          blockedAfter[i][s] = blockedAfter[i][s + 1] + (blocked ? 1 : 0);
+        }
+      }
+    }
 
     for (let s = 0; s < S; s++) {
       const R = S - s;
@@ -287,9 +318,11 @@
       const score = new Array(n);
       for (let i = 0; i < n; i++) {
         // Non-closers aim to use up their minutes before the last C minutes of the game.
-        const Ri = gap[i] && R > C ? R - C : R;
-        let sc = (p.urg * rem[i]) / Ri + rng() * p.noise;
+        // Picked finishers keep their last minutes for the end of the game.
+        const Ri = finLen[i] && R > finLen[i] ? R - finLen[i] : gap[i] && R > C ? R - C : R;
+        let sc = (p.urg * Math.max(0, rem[i] - (R > finLen[i] ? finLen[i] : 0))) / Ri + rng() * p.noise;
         if (gap[i] && R <= C) sc -= (p.closeW * gap[i]) / 10;
+        if (finLen[i]) sc += R <= finLen[i] ? 5 : rem[i] <= finLen[i] ? -5 : 0;
         if (on.has(i)) {
           if (stint[i] < p.minStint) sc += 1;
           else if (stint[i] >= maxStint) sc -= 0.6 + 0.15 * (stint[i] - maxStint);
@@ -304,10 +337,13 @@
       else if (!isWindow) base = [...on];
 
       const need = lim ? remL.map((r, l) => Math.max(0, r - lim[l][1] * (R - 1))) : null;
-      const pk = picker(N, lim, memb, parent, need, rem.map((r) => r > 0));
+      // hardFin: picked finishers can't use the minutes they keep for the end of the game.
+      const blockedNow = (i) => blockedAfter && blockedAfter[i][s] > blockedAfter[i][s + 1];
+      const pk = picker(N, lim, memb, parent, need, rem.map((r, i) =>
+        r > (p.hardFin && R > finLen[i] && !base.includes(i) ? finLen[i] : 0) && !blockedNow(i)));
       const chosen = pk.chosen;
-      // Players whose remaining minutes equal remaining time must play every minute from now on.
-      for (let i = 0; i < n; i++) if (rem[i] === R) pk.add(i, true);
+      // Players whose remaining minutes equal the minutes they still can play must play every one of them.
+      for (let i = 0; i < n; i++) if (rem[i] === R - (blockedAfter ? blockedAfter[i][s] : 0)) pk.add(i, true);
       base.slice().sort(byScore).forEach((i) => pk.add(i));
       const ranked = [...Array(n).keys()].sort(byScore);
       if (lim) for (const i of ranked) if (pk.short(i)) pk.add(i);
@@ -345,7 +381,7 @@
   }
 
   // Cost weights. Stoppages and long stints are what make a sheet hard to run from the bench.
-  const W = { moment: 1.5, offWindow: 2, closers: 0.15, long: 0.8 };
+  const W = { moment: 1.5, offWindow: 2, closers: 0.15, long: 0.8, finisher: 30 };
   // A break between periods counts as this many minutes of rest (halftime as a full rest).
   const BREAK = 2;
 
@@ -385,8 +421,11 @@
     });
     // Every in-play stoppage with subs is work for the coach: prefer fewer, grouped subs.
     for (let s = 0; s < S; s++) moments += subAt[s];
-    const gap = closerGaps(mins, cfg.onCourt);
+    const fin = cfg.finishers || [];
+    const gap = closerGaps(mins, cfg.onCourt, fin);
     for (let s = Math.max(0, S - closeLenOf(cfg)); s < S; s++) grid.forEach((row, i) => { if (row[s]) closers += gap[i]; });
+    let finMiss = 0;
+    if (cfg.finLen) cfg.finLen.forEach((len, i) => { for (let s = S - len; s < S; s++) if (!grid[i][s]) finMiss++; });
     let posPenalty = 0;
     if (cfg.posCost) {
       for (let s = 0; s < S; s++) {
@@ -396,8 +435,8 @@
       }
     }
     const cost = subs + W.moment * moments + W.long * longStint + 1.5 * shortStint + 0.5 * shortRest +
-      W.offWindow * offWindow + 0.6 * posPenalty + W.closers * closers;
-    return { subs, moments, posPenalty, cost };
+      W.offWindow * offWindow + 0.6 * posPenalty + W.closers * closers + W.finisher * finMiss;
+    return { subs, moments, posPenalty, finMiss, cost };
   }
 
   // Give player `idx` exactly `newVal` minutes by editing an existing slot lineup
@@ -504,27 +543,31 @@
     // Picked starters start, even if fewer than N are picked (the rest is filled in automatically). Players
     // who play the whole game always start; if the positions or the lineup size don't allow all picked
     // starters, the ones with the most minutes start.
-    const starters = [], dropped = [];
-    const picked = players.map((p, i) => (p.starter && targets[i] > 0 ? i : -1)).filter((i) => i >= 0);
-    if (picked.length) {
+    // Picked finishers are on court at the end of the game, with the same rules.
+    const pickLineup = (flag) => {
+      const out = [], drop = [];
+      const picked = players.map((p, i) => (p[flag] && targets[i] > 0 ? i : -1)).filter((i) => i >= 0);
+      if (!picked.length) return [out, drop];
       const memb = membership(groups, limits || [], players.length);
       const need = limits && limits.map(([, cap], l) =>
         Math.max(0, targets.reduce((a, t, i) => a + (memb[i].includes(l) ? t : 0), 0) - cap * (T - 1)));
       const pk = picker(N, limits, memb, limits && limitTree(limits), need, targets.map((t) => t > 0));
       targets.forEach((t, i) => { if (t >= T) pk.add(i, true); });
       picked.sort((a, b) => targets[b] - targets[a] || a - b).forEach((i) => {
-        if (pk.chosen.includes(i) || pk.add(i)) starters.push(i);
-        else dropped.push(i);
+        if (pk.chosen.includes(i) || pk.add(i)) out.push(i);
+        else drop.push(i);
       });
-      starters.sort((a, b) => a - b);
-    }
-    return { targets, posVals, usePos, mode: plan.mode, groups, rows, limits, starters, dropped };
+      return [out.sort((a, b) => a - b), drop];
+    };
+    const [starters, dropped] = pickLineup('starter');
+    const [finishers, finDropped] = pickLineup('finisher');
+    return { targets, posVals, usePos, mode: plan.mode, groups, rows, limits, starters, dropped, finishers, finDropped };
   }
 
   function buildRotation(players, cfg, opts = {}) {
     const N = cfg.onCourt;
     const plan = planTargets(players, cfg);
-    const { targets, starters, posVals } = plan;
+    const { targets, starters, finishers, posVals } = plan;
     const halfSlot = cfg.periods % 2 === 0 ? (cfg.periods / 2) * cfg.periodLen : -1;
     cfg = {
       ...cfg,
@@ -533,6 +576,8 @@
       limits: plan.limits,
       // Polishing must not move anyone out of the starting lineups.
       lockSlots: starters.length ? [0, ...(cfg.startersEachHalf && halfSlot > 0 ? [halfSlot] : [])] : [],
+      finishers,
+      finLen: finishers.length ? finishLens(cfg, targets, starters, finishers) : null,
     };
     const rng = mulberry32(opts.seed ?? 12345);
     const iters = opts.iterations ?? 600;
@@ -545,14 +590,53 @@
         urg: k === 0 ? 1 : 0.7 + rng() * 2.3,
         posW: k === 0 ? 0.3 : rng() * 0.8,
         closeW: k === 0 ? 1 : rng() * 2,
+        hardFin: finishers.length > 0 && k % 2 === 1,
       };
       const grid = buildOnce(targets, starters, cfg, rng, p);
+      // The hard finisher rule can paint itself into a corner: skip those (the soft builds always work).
+      if (p.hardFin && !grid.every((row, i) => row.reduce((a, b) => a + b, 0) === targets[i] && (!starters.includes(i) || row[0]))) continue;
       const a = analyze(grid, cfg);
       if (!best || a.cost < best.cost) best = { grid, ...a };
     }
-    const grid = polish(best.grid, cfg, rng, opts.polishSteps ?? 40000);
+    const grid = finish(polish(finish(best.grid, cfg), cfg, rng, opts.polishSteps ?? 40000), cfg);
     const fin = analyze(grid, cfg);
     return { grid, targets, starters, plan, mode: plan.mode, subs: fin.subs, moments: fin.moments, posPenalty: fin.posPenalty };
+  }
+
+  // Puts picked finishers on court for the end of the game: finisher f moves a minute from earlier in the game
+  // (t) to the end (s), and a player b on court at s takes f's minute t. Minutes, the on-court count, starting
+  // lineups and position limits stay as they are; the cheapest such swap is used.
+  function finish(grid, cfg) {
+    const fin = cfg.finishers || [];
+    if (!fin.length) return grid;
+    const S = cfg.periods * cfg.periodLen;
+    const n = grid.length;
+    const g = grid.map((r) => r.slice());
+    const lock = cfg.lockSlots || [];
+    const lim = cfg.limits;
+    const memb = lim ? membership(cfg.groups, lim, n) : null;
+    const fits = (s) => !lim || lim.every(([, cap], l) => g.reduce((a, r, i) => a + (r[s] && memb[i].includes(l) ? 1 : 0), 0) <= cap);
+    const from = (i) => S - cfg.finLen[i];
+    for (const f of fin) {
+      for (let s = S - 1; s >= from(f); s--) {
+        if (g[f][s]) continue;
+        let best = null;
+        for (let t = 0; t < S; t++) {
+          if (!g[f][t] || t >= from(f) || lock.includes(t) || lock.includes(s)) continue;
+          for (let b = 0; b < n; b++) {
+            if (!g[b][s] || g[b][t] || s >= from(b)) continue;
+            g[f][t] = 0; g[f][s] = 1; g[b][s] = 0; g[b][t] = 1;
+            if (fits(s) && fits(t)) {
+              const c = analyze(g, cfg).cost;
+              if (!best || c < best.c) best = { c, t, b };
+            }
+            g[f][t] = 1; g[f][s] = 0; g[b][s] = 1; g[b][t] = 0;
+          }
+        }
+        if (best) { g[f][best.t] = 0; g[f][s] = 1; g[best.b][s] = 0; g[best.b][best.t] = 1; }
+      }
+    }
+    return g;
   }
 
   // Hill-climb with swaps that keep every player's minutes and the on-court count unchanged.

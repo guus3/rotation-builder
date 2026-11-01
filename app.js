@@ -149,7 +149,7 @@
     out.players = (out.players || []).map((p) => {
       const t = p.target === '' || p.target == null ? NaN : Number(p.target);
       return {
-        ...p, out: !!p.out, starter: !!p.starter, name: String(p.name ?? ''), num: String(p.num ?? ''),
+        ...p, out: !!p.out, starter: !!p.starter, finisher: !!p.finisher, name: String(p.name ?? ''), num: String(p.num ?? ''),
         pos: POS_OPTIONS.includes(p.pos) ? p.pos : '', target: Number.isFinite(t) && t >= 0 ? t : '',
       };
     });
@@ -176,7 +176,7 @@
       v: 2,
       t: state.title,
       s: [st.periods, st.periodLen, st.subEvery, st.maxStint, st.minRest, st.onCourt, st.startersEachHalf ? 1 : 0, st.balancePositions ? 1 : 0],
-      p: state.players.map((p) => [p.num, p.name, p.target, p.starter ? 1 : 0, p.pos || '', p.out ? 1 : 0]),
+      p: state.players.map((p) => [p.num, p.name, p.target, p.starter ? 1 : 0, p.pos || '', p.out ? 1 : 0, p.finisher ? 1 : 0]),
       g: state.players.map((p) => state.targets?.[p.id] ?? null),
       w,
       l: lineupValid() ? state.lineup.map((row) => row.map((id) => idx.get(id).toString(36).padStart(w, '0')).join('')).join('') : '',
@@ -197,7 +197,7 @@
     const [periods, periodLen, subEvery, maxStint, minRest, onCourt, seh, bal] = d.s;
     s.settings = { periods, periodLen, subEvery, maxStint, minRest, onCourt, startersEachHalf: !!seh, balancePositions: bal !== 0 };
     settingIds.forEach((k) => (s.settings[k] = clampSetting(k, s.settings[k], defaults().settings[k])));
-    s.players = d.p.map((a, i) => ({ id: i + 1, num: a[0] ?? '', name: a[1] ?? '', target: a[2] ?? '', starter: !!a[3], pos: a[4] || '', out: !!a[5] }));
+    s.players = d.p.map((a, i) => ({ id: i + 1, num: a[0] ?? '', name: a[1] ?? '', target: a[2] ?? '', starter: !!a[3], pos: a[4] || '', out: !!a[5], finisher: !!a[6] }));
     s.targets = {};
     s.players.forEach((p, i) => (s.targets[p.id] = d.g?.[i] ?? null));
     s.mode = d.m ?? null;
@@ -247,7 +247,7 @@
       }
     } catch (e) { console.warn(e); }
     const s = defaults();
-    s.players = Array.from({ length: 10 }, (_, i) => ({ id: i + 1, num: '', name: `Player ${i + 1}`, target: '', starter: i < 5, pos: '' }));
+    s.players = Array.from({ length: 10 }, (_, i) => ({ id: i + 1, num: '', name: `Player ${i + 1}`, target: '', starter: i < 5, finisher: false, pos: '' }));
     return s;
   }
 
@@ -305,7 +305,8 @@
         <td><input class="name" value="${esc(p.name)}" data-f="name" placeholder="Name" /></td>
         <td><select class="pos" data-f="pos">${POS_OPTIONS.map((o) => `<option value="${o}" ${o === (p.pos || '') ? 'selected' : ''}>${o || '–'}</option>`).join('')}</select></td>
         <td><input class="min" type="number" inputmode="numeric" min="0" max="${S()}" value="${esc(p.target)}" placeholder="auto" data-f="target" /></td>
-        <td><button class="star ${p.starter ? 'on' : ''}" aria-label="Starter">★</button></td>
+        <td><button class="star ${p.starter ? 'on' : ''}" aria-label="Starter" title="Starter">★</button></td>
+        <td><button class="fin ${p.finisher ? 'on' : ''}" aria-label="Finisher" title="Finisher – on court at the end of the game">🏁</button></td>
         <td><button class="del" aria-label="Remove">✕</button></td>`;
       tr.querySelectorAll('input').forEach((inp) =>
         inp.addEventListener('input', () => {
@@ -337,6 +338,12 @@
         renderStatus();
         changed();
       });
+      tr.querySelector('.fin').addEventListener('click', (e) => {
+        p.finisher = !p.finisher;
+        e.currentTarget.classList.toggle('on', p.finisher);
+        renderStatus();
+        changed();
+      });
       tr.querySelector('.del').addEventListener('click', () => {
         if (p.name && !/^Player \d+$/.test(p.name) && !confirm(`Remove ${p.name} from the list?\n(If they just miss this game, untick ✓ instead.)`)) return;
         state.players = state.players.filter((x) => x !== p);
@@ -363,11 +370,12 @@
     return [...acc.values()].sort((a, b) => b.min - a.min);
   }
 
-  // Why picked starter i (index in active()) can't start.
-  function dropReason(plan, i) {
+  // Why picked starter (or finisher) i (index in active()) can't start (finish).
+  function dropReason(plan, i, finish) {
     const act = active();
-    const forced = plan.targets.map((t, k) => (t >= S() && !plan.starters.includes(k) ? k : -1)).filter((k) => k >= 0);
-    const onCourt = [...plan.starters, ...forced];
+    const list = finish ? plan.finishers : plan.starters;
+    const forced = plan.targets.map((t, k) => (t >= S() && !list.includes(k) ? k : -1)).filter((k) => k >= 0);
+    const onCourt = [...list, ...forced];
     const g = plan.groups ? plan.groups[i] : -1;
     const lim = g >= 0 && plan.limits.find(([m]) => (m >> g) & 1);
     if (lim && onCourt.filter((k) => plan.groups[k] >= 0 && (lim[0] >> plan.groups[k]) & 1).length >= lim[1]) {
@@ -375,7 +383,7 @@
       return lim[1] === 1 ? `only 1 ${GROUP_ONE[gs[0]]} fits on court` : `only ${lim[1]} ${listAnd(gs.map((x) => GROUPS[x]))} fit on court`;
     }
     if (forced.length) return `${listAnd(forced.map((k) => esc(shortName(act[k]))))} play${forced.length > 1 ? '' : 's'} the whole game`;
-    return `only ${N()} can start`;
+    return `only ${N()} can ${finish ? 'finish' : 'start'}`;
   }
 
   function renderStatus() {
@@ -414,6 +422,26 @@
       if (starters && starters < s.onCourt) parts.push(`⭐ ${starters} starter${starters > 1 ? 's' : ''} picked – the rest are picked automatically`);
       if (dropped.length) cls = 'warn';
       dropped.forEach((i) => parts.push(`⭐ ${nm(act[i])} can't start – ${dropReason(plan, i)}`));
+    }
+    const finishers = act.filter((p) => p.finisher).length;
+    const finDropped = fresh ? plan.finDropped : [];
+    if (finishers > s.onCourt) {
+      cls = 'warn';
+      parts.push(`🏁 ${finishers} finishers picked – only ${s.onCourt} can finish${finDropped.length ? ` (${listAnd(finDropped.map((i) => nm(act[i])))} won't)` : ''}`);
+    } else {
+      if (finishers && finishers < s.onCourt) parts.push(`🏁 ${finishers} finisher${finishers > 1 ? 's' : ''} picked – the rest are the players with the most minutes`);
+      if (finDropped.length) cls = 'warn';
+      finDropped.forEach((i) => parts.push(`🏁 ${nm(act[i])} can't finish – ${dropReason(plan, i, true)}`));
+    }
+    // Picked finishers who still aren't on court at the end (hand edits, or minutes and positions that clash).
+    if (lineupValid() && finishers) {
+      const last = state.lineup[state.lineup.length - 1];
+      const skip = new Set(finDropped.map((i) => act[i].id));
+      const miss = act.filter((p) => p.finisher && !skip.has(p.id) && !last.includes(p.id));
+      if (miss.length) {
+        cls = 'warn';
+        parts.push(`🏁 ${listAnd(miss.map(nm))} ${miss.length > 1 ? "aren't" : "isn't"} on court at the end${state.edited ? '' : ' – the minutes and positions don\'t allow it'}`);
+      }
     }
 
     // Positions: typed minutes that had to change, and who plays out of position (and why).
@@ -467,7 +495,7 @@
   }
 
   $('addPlayer').addEventListener('click', () => {
-    state.players.push({ id: ++uid, num: '', name: '', target: '', starter: false, pos: '', out: false });
+    state.players.push({ id: ++uid, num: '', name: '', target: '', starter: false, finisher: false, pos: '', out: false });
     renderRoster();
     const names = document.querySelectorAll('#rosterBody .name');
     names[names.length - 1].focus();
@@ -505,7 +533,7 @@
       if (tokens.length > 1 && /^\d{1,2}$/.test(tokens[tokens.length - 1])) target = Number(tokens.pop());
       const pi = tokens.findIndex((t, k) => k > 0 && /^(PG|SG|SF|PF|C|G|F)$/i.test(t));
       if (pi > 0) pos = tokens.splice(pi, 1)[0].toUpperCase();
-      return { id: ++uid, num, name: tokens.join(' '), target, starter: i < state.settings.onCourt, pos, out: false };
+      return { id: ++uid, num, name: tokens.join(' '), target, starter: i < state.settings.onCourt, finisher: false, pos, out: false };
     });
     state.pinned = [];
     state.teamId = null;
@@ -536,7 +564,7 @@
     if (!team) { state.teamId = null; renderTeams(); save(); return; }
     if (state.lineup && !confirm(`Load "${team.name}"? The current rotation will be replaced.`)) { renderTeams(); return; }
     state.teamId = team.id;
-    state.players = team.players.map((p) => ({ id: ++uid, num: '', name: '', target: '', starter: false, pos: '', ...p, out: false }));
+    state.players = team.players.map((p) => ({ id: ++uid, num: '', name: '', target: '', starter: false, finisher: false, pos: '', ...p, out: false }));
     if (team.settings) state.settings = { ...state.settings, ...team.settings };
     state.lineup = null;
     state.targets = null;
@@ -556,7 +584,7 @@
     const cur = teams.find((t) => t.id === state.teamId);
     const name = (prompt('Team name', cur ? cur.name : state.title || '') || '').trim();
     if (!name) return;
-    const players = state.players.map((p) => ({ num: p.num, name: p.name, pos: p.pos || '', target: p.target, starter: !!p.starter }));
+    const players = state.players.map((p) => ({ num: p.num, name: p.name, pos: p.pos || '', target: p.target, starter: !!p.starter, finisher: !!p.finisher }));
     const existing = teams.find((t) => t.name.toLowerCase() === name.toLowerCase());
     const team = existing || { id: Date.now(), name };
     Object.assign(team, { name, players, settings: { ...state.settings } });
@@ -589,7 +617,7 @@
     debounce = setTimeout(() => build(null, true), typing ? 600 : 0);
   }
   // What the rotation is built from: names, numbers and players who are out don't matter.
-  const buildKey = (s) => JSON.stringify([s.settings, s.seed, s.players.filter((p) => !p.out).map((p) => [p.id, p.pos, p.target, p.starter])]);
+  const buildKey = (s) => JSON.stringify([s.settings, s.seed, s.players.filter((p) => !p.out).map((p) => [p.id, p.pos, p.target, p.starter, p.finisher])]);
 
   function build(note, auto) {
     clearTimeout(debounce);
@@ -729,6 +757,7 @@
     $('printMinutes').textContent = `Minutes: ${active().map((p) => `${shortName(p)} ${mp[p.id]}`).join(' · ')}`;
     renderSubs();
     renderChart();
+    renderStatus();
   }
 
   function renderLineup() {

@@ -73,6 +73,8 @@ table.roster tr.is-out .name { text-decoration: line-through; }
 .teambar button { margin: 0; }
 .star { background: #f0ebe4; color: #c8c2b8; font-size: 1.1rem; padding: 6px 10px; }
 .star.on { background: #fff3c4; color: #e0a800; }
+.fin { background: #f0ebe4; font-size: 1rem; padding: 6px 8px; filter: grayscale(1); opacity: 0.45; }
+.fin.on { background: #e4eefc; filter: none; opacity: 1; }
 .del { background: transparent; color: #b5b0a8; padding: 6px 8px; }
 
 .status { margin-top: 12px; padding: 10px 12px; border-radius: 8px; font-size: 0.92rem; }
@@ -237,5 +239,6 @@ dialog::backdrop { background: rgba(20, 20, 25, 0.45); }
   table.roster .pos { width: 54px; }
   .inout { width: 30px; height: 30px; }
   .star { padding: 6px 6px; }
+  .fin { padding: 6px 4px; }
   .del { padding: 6px 2px; }
 }

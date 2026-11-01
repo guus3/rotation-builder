@@ -2,7 +2,7 @@
 
 Enter players and target minutes → get a minute-by-minute rotation chart and substitution sheet.
 
-- Paste a roster (`4 Mikko 32` per line), leave minutes blank to split evenly, ⭐ starters (pick 5, or just the ones you want – the rest are picked automatically).
+- Paste a roster (`4 Mikko 32` per line), leave minutes blank to split evenly, ⭐ starters and 🏁 finishers (pick 5, or just the ones you want – the rest are picked automatically). Finishers are on court for the last minutes of the game (last 4 min in a 4×10 game); if positions or minutes don't allow it, the app says why.
 - Rotation is built automatically: exact minutes, 5 on court, subs on chosen intervals, max stint & rest rules. Subs are bunched into fewer stoppages, a quarter break counts as rest, and the players with the most minutes finish the game where possible.
 - Positions stay put (*Keep players in their positions*, under *Rotation style*): guards (PG, SG, G) only play the two guard rows, forwards (SF, PF, F) the two forward rows, centres the C row. `–` = plays anywhere.
   - If the typed minutes don't fit the position rows, they're adjusted and the change is shown (e.g. *Minutes changed to keep positions: Mikko 30→27*).

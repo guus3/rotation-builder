@@ -17,6 +17,13 @@
   <main>
     <section class="card" id="setup">
       <h2><span class="step">1</span> Game</h2>
+      <div class="teambar">
+        <label for="rotationSel">Saved rotation</label>
+        <select id="rotationSel" aria-label="Saved rotation"></select>
+        <button id="loadRotation" class="secondary" disabled>Load</button>
+        <button id="delRotation" class="ghost" hidden>Delete saved rotation</button>
+      </div>
+      <p class="hint">Save a built rotation below, then load a copy here for the next game. Saved rotations stay in this browser.</p>
       <div class="row">
         <label class="grow">Game name <input id="title" placeholder="e.g. vs Tigers 12.11." /></label>
       </div>
@@ -75,7 +82,7 @@
         <details class="help">
           <summary>How it works</summary>
           <ul>
-            <li><b>In</b> – untick players who miss this game.</li>
+            <li><b>In</b> – untick players who miss this game. They move to the bottom with 0 minutes; tick them back in to restore their original place and previous minutes setting.</li>
             <li><b>Min</b> – minutes for the game. Empty boxes share what's left (shown as ~20).</li>
             <li><b>Start / Finish</b> – who is on court at the start and at the end of the game. Pick 5, or just the ones you want; the rest are picked automatically.</li>
             <li><b>Pos</b> – players stay in position: guards (PG, SG, G) only play guard, forwards (SF, PF, F) forward, centres C. '–' plays anywhere.</li>
@@ -110,6 +117,7 @@
         <div class="buttons">
           <button id="undoBtn" class="secondary" hidden>Undo</button>
           <button id="rebuildBtn" class="secondary" title="Build a different variation">New version</button>
+          <button id="saveRotation" class="secondary" title="Save this exact rotation to reuse for another game">Save rotation</button>
           <button id="shareBtn">Share link</button>
           <button id="imageBtn">Save image</button>
           <button id="printBtn" class="secondary">Print</button>

@@ -52,6 +52,7 @@ button {
 }
 button.secondary { background: #f0ebe4; color: var(--ink); }
 button.ghost { background: transparent; color: var(--muted); }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
 button.big { width: 100%; padding: 14px; font-size: 1.1rem; font-weight: 600; margin-top: 12px; }
 .buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 .hint { color: var(--muted); font-size: 0.9rem; margin: 0 0 10px; }

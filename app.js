@@ -308,7 +308,6 @@
       tr.className = p.out ? 'is-out' : '';
       tr.innerHTML = `
         <td class="c-in"><button class="inout ${p.out ? '' : 'on'}" aria-label="Playing this game" title="Playing this game">${p.out ? '' : '✓'}</button></td>
-        <td class="c-num"><input class="num" inputmode="numeric" maxlength="3" value="${esc(p.num)}" data-f="num" /></td>
         <td><input class="name" value="${esc(p.name)}" data-f="name" placeholder="Name" /></td>
         <td><select class="pos" data-f="pos">${POS_OPTIONS.map((o) => `<option value="${o}" ${o === (p.pos || '') ? 'selected' : ''}>${o || '–'}</option>`).join('')}</select></td>
         <td><input class="min" type="number" inputmode="numeric" min="0" max="${S()}" value="${esc(p.target)}" placeholder="auto" data-f="target" /></td>

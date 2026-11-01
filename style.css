@@ -81,10 +81,9 @@ table.roster { width: 100%; border-collapse: collapse; }
 table.roster th { text-align: left; font-size: 0.8rem; color: var(--muted); font-weight: 500; padding: 0 4px 4px; }
 table.roster td { padding: 3px 4px; }
 table.roster input { width: 100%; }
-table.roster .num { width: 52px; text-align: center; }
 table.roster .min { width: 70px; text-align: center; }
 table.roster .pos { width: 64px; padding: 8px 4px; }
-table.roster td:nth-child(3) { width: 100%; }
+table.roster td:nth-child(2) { width: 100%; }
 .inout { width: 34px; height: 34px; padding: 0; border-radius: 8px; background: #f0ebe4; color: #fff; font-weight: 700; border: 2px solid #d9d3c9; }
 .inout.on { background: var(--ok); border-color: var(--ok); }
 table.roster tr.is-out td:not(.c-in) { opacity: 0.4; }
@@ -277,7 +276,6 @@ dialog::backdrop { background: rgba(20, 20, 25, 0.45); }
 }
 
 @media (max-width: 600px) {
-  table.roster th:nth-child(2), table.roster td:nth-child(2) { display: none; }
   table.roster td { padding: 3px 2px; }
   table.roster .min { width: 46px; padding-left: 2px; padding-right: 2px; }
   table.roster .pos { width: 54px; }

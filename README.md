@@ -2,7 +2,7 @@
 
 Enter players and target minutes → get a minute-by-minute rotation chart and substitution sheet.
 
-- Paste a roster (`4 Mikko 32` per line), leave minutes blank to split evenly, tick *Start* and *Finish* for who is on court at the start and at the end (pick 5, or just the ones you want – the rest are picked automatically). The column headers count the picks (e.g. *Start 3/5*); a pick that can't fit (a 6th starter, a 3rd guard when only 2 fit) is shown dashed and tapping it says why. The *Starting 5 / Closing 5* summary under the list shows the picks, with *Same as starters* and *Clear*. Finishers are on court for the last minutes of the game (last 4 min in a 4×10 game); if positions or minutes don't allow it, the app says why.
+- Paste a roster (`Mikko 32` per line), leave minutes blank to split evenly, tick *Start* and *Finish* for who is on court at the start and at the end (pick 5, or just the ones you want – the rest are picked automatically). The roster has no player-number column. The column headers count the picks (e.g. *Start 3/5*); a pick that can't fit (a 6th starter, a 3rd guard when only 2 fit) is shown dashed and tapping it says why. The *Starting 5 / Closing 5* summary under the list shows the picks, with *Same as starters* and *Clear*. Finishers are on court for the last minutes of the game (last 4 min in a 4×10 game); if positions or minutes don't allow it, the app says why.
 - Rotation is built automatically: exact minutes, 5 on court, subs on chosen intervals, max stint & rest rules. Subs are bunched into fewer stoppages, a quarter break counts as rest, and the players with the most minutes finish the game where possible.
 - Positions stay put (*Keep players in their positions*, under *Rotation style*): guards (PG, SG, G) only play the two guard rows, forwards (SF, PF, F) the two forward rows, centres the C row. `–` = plays anywhere.
   - If the typed minutes don't fit the position rows, they're adjusted and the change is shown (e.g. *Minutes changed to keep positions: Mikko 30→27*).
@@ -14,7 +14,7 @@ Enter players and target minutes → get a minute-by-minute rotation chart and s
 - Editor: drag the white line between two bars to move a sub, drag a bar sideways to shift a stint, or use − / + (or type) per player to change minutes – the rotation and other players adjust automatically. The lock keeps a player's minutes fixed.
 - Share link: the whole rotation is compressed into the URL – whoever opens it gets an editable copy (no server/login).
 - Save image: exports a PNG of the lineup + minutes (share sheet on phones, download on desktop). Print gives a compact bench sheet (one landscape page for a typical game) with the game name, lineups, minutes and the sub list.
-- Paste format: `4 Mikko PG 32` (number, name, optional position, optional minutes). Data is saved in the browser.
+- Paste format: `Mikko PG 32` (name, optional position, optional minutes). Lists with a leading player number are still supported. Data is saved in the browser.
 
 Static site (no backend): `index.html`, `app.js`, `rotation.js` (engine), `style.css`.
 Run locally: `python3 -m http.server` and open http://localhost:8000.

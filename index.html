@@ -49,7 +49,7 @@
           <label>Min rest before return <input type="number" id="minRest" min="0" max="20" /></label>
           <label>Players on court <input type="number" id="onCourt" min="1" max="7" /></label>
           <label class="check"><input type="checkbox" id="startersEachHalf" /> Starters start 2nd half</label>
-          <label class="check"><input type="checkbox" id="balancePositions" /> Balance positions on court</label>
+          <label class="check"><input type="checkbox" id="balancePositions" /> Keep players in their positions</label>
         </div>
       </details>
     </section>
@@ -62,7 +62,7 @@
         <button id="saveTeam" class="secondary" title="Save these players as a team you can pick every game">💾 Save team</button>
         <button id="delTeam" class="ghost" title="Delete this team" hidden>🗑</button>
       </div>
-      <p class="hint">Save your players once as a team, then pick it every game and untick ✓ who's not playing. Leave minutes empty to split the rest evenly. ⭐ = starter. Set positions to get balanced lineups. G = PG/SG, F = SF/PF.</p>
+      <p class="hint">Save your players once as a team, then pick it every game and untick ✓ who's not playing. Leave minutes empty to split the rest evenly. ⭐ = starter (pick 5, or just the ones you want). Positions are kept: guards (PG, SG, G) only play guard, forwards (SF, PF, F) forward, centres C. '–' = plays anywhere.</p>
       <table class="roster">
         <thead><tr><th title="Playing this game">In</th><th>#</th><th>Name</th><th>Pos</th><th>Min</th><th title="Starter">⭐</th><th></th></tr></thead>
         <tbody id="rosterBody"></tbody>
@@ -83,6 +83,7 @@
     </section>
 
     <section class="card" id="result" hidden>
+      <h1 id="printTitle" class="print-only"></h1>
       <div class="result-head">
         <h2><span class="step">3</span> Rotation</h2>
         <div class="buttons">
@@ -97,6 +98,7 @@
       <div id="lineup" class="lu-cards"></div>
 
       <div id="minutes" class="minutes noprint"></div>
+      <p id="printMinutes" class="print-only"></p>
 
       <h2 class="subs-title">Substitutions</h2>
       <div id="subs" class="subs"></div>

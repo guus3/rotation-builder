@@ -16,6 +16,8 @@
     pinned: [], // player ids whose minutes were set by hand and should not be changed automatically
     teamId: null,
     seed: 1,
+    mode: null, // position rules the lineup was built with (see Rotation.POS_MODES)
+    edited: false, // lineup changed by hand since the last build
   });
 
   let state;
@@ -28,9 +30,18 @@
   const N = () => state.settings.onCourt;
   const byId = (id) => state.players.find((p) => p.id === id);
   const active = () => state.players.filter((p) => !p.out);
-  const label = (p) => (p.num !== '' && p.num != null ? `#${p.num} ` : '') + (p.name || 'Player');
-  const shortName = (p) => (p ? p.name || (p.num !== '' ? `#${p.num}` : 'Player') : '?');
-  const slotLabel = (j) => (N() === 5 ? POS[j] : String(j + 1));
+  // Unnamed players get a unique fallback so two of them can be told apart on the sheet.
+  const noName = (p) => `Player ${state.players.indexOf(p) + 1 || ''}`.trim();
+  const label = (p) => (p.num !== '' && p.num != null ? `#${p.num} ` : '') + (p.name || noName(p));
+  const shortName = (p) => (p ? p.name || (p.num !== '' && p.num != null ? `#${p.num}` : noName(p)) : '?');
+  // Rows are named PG..C only when positions are in use; otherwise they're just numbered.
+  const posRows = () => N() === 5 && state.settings.balancePositions && active().some((p) => p.pos in POS_VAL);
+  const slotLabel = (j) => (posRows() ? POS[j] : String(j + 1));
+  const GROUPS = ['guards', 'forwards', 'centres'];
+  const GROUP_ONE = ['guard', 'forward', 'centre'];
+  const ROW_NAMES = ['guard', 'forward', 'C'];
+  const listAnd = (a) => (a.length < 2 ? a.join('') : `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}`);
+  const isBlank = (v) => v === '' || v == null;
   const clock = (slot) => `${L() - (slot % L())}:00`;
   const endClock = (slot) => (slot % L() === 0 ? '0:00' : clock(slot));
   const colorOf = (id) => COLORS[Math.max(0, state.players.findIndex((p) => p.id === id)) % COLORS.length];
@@ -71,14 +82,38 @@
     return m;
   }
   const posValOf = (p) => (p.pos in POS_VAL ? POS_VAL[p.pos] : null);
-  // gridRows are indexed like active()
-  function lineupFromGrid(gridRows) {
-    const act = active();
-    return Rotation.assignSlots(gridRows, act.map(posValOf), N(), L()).map((row) => row.map((i) => act[i].id));
+  // Position rules of the current rotation (null = none): which rows each active player may take.
+  function posPlan() {
+    const rows = posRows() && Rotation.POS_MODES.find(([m]) => m === state.mode)?.[1];
+    return rows ? { rows, groups: active().map((p) => Rotation.groupOf(posValOf(p))) } : null;
   }
-  function pushUndo() {
-    undoStack.push(JSON.stringify({ lineup: state.lineup, targets: state.targets, pinned: state.pinned }));
+  // What a build would do with the roster as it is now: minutes, position rules, starters.
+  function currentPlan() {
+    if (active().length < N()) return null;
+    try { return Rotation.planTargets(active().map((p) => ({ ...p })), { ...state.settings }); } catch (e) { return null; }
+  }
+  const actIndex = () => new Map(active().map((p, i) => [p.id, i]));
+  const canPlay = (plan, idx, id, k) => !plan || Rotation.rowOk(plan, idx.get(id), k);
+  // gridRows are indexed like active()
+  function lineupFromGrid(gridRows, plan = posPlan()) {
+    const act = active();
+    return Rotation.assignSlots(gridRows, act.map(posValOf), N(), L(), plan).map((row) => row.map((i) => act[i].id));
+  }
+  // Undo restores the whole state (players, settings and rotation), so automatic rebuilds can be undone too.
+  const snap = () => JSON.stringify({
+    players: state.players, settings: state.settings, lineup: state.lineup, targets: state.targets,
+    pinned: state.pinned, seed: state.seed, mode: state.mode, edited: state.edited,
+  });
+  let lastSnap = null; // state after the last build / edit / undo
+  let pending = false; // a rebuild is scheduled
+  function pushUndo(s = snap()) {
+    if (!s) return;
+    undoStack.push(s);
     if (undoStack.length > 50) undoStack.shift();
+  }
+  function commit() {
+    save();
+    if (!pending) lastSnap = snap();
   }
   // After hand edits the rotation is the truth: targets (and roster minutes) follow it.
   function syncTargetsToLineup() {
@@ -97,11 +132,29 @@
   }
 
   // ---------- Storage & share links ----------
+  // Settings are kept within the limits of their inputs (also for saved state and share links).
+  function clampSetting(k, v, fallback) {
+    v = parseInt(v, 10);
+    if (isNaN(v)) return fallback;
+    const el = $(k), lo = el?.getAttribute('min'), hi = el?.getAttribute('max');
+    if (el?.tagName === 'SELECT') return [...el.options].some((o) => Number(o.value) === v) ? v : fallback;
+    if (lo != null) v = Math.max(Number(lo), v);
+    if (hi != null) v = Math.min(Number(hi), v);
+    return v;
+  }
   function normalize(s) {
     const d = defaults();
     const out = { ...d, ...s, settings: { ...d.settings, ...(s.settings || {}) } };
-    out.players = (out.players || []).map((p) => ({ pos: '', out: false, ...p }));
+    settingIds.forEach((k) => (out.settings[k] = clampSetting(k, out.settings[k], d.settings[k])));
+    out.players = (out.players || []).map((p) => {
+      const t = p.target === '' || p.target == null ? NaN : Number(p.target);
+      return {
+        ...p, out: !!p.out, starter: !!p.starter, name: String(p.name ?? ''), num: String(p.num ?? ''),
+        pos: POS_OPTIONS.includes(p.pos) ? p.pos : '', target: Number.isFinite(t) && t >= 0 ? t : '',
+      };
+    });
     out.pinned = out.pinned || [];
+    if (![...Rotation.POS_MODES.map(([m]) => m), 'soft', 'off'].includes(out.mode)) out.mode = null;
     return out;
   }
   function save() {
@@ -127,6 +180,8 @@
       g: state.players.map((p) => state.targets?.[p.id] ?? null),
       w,
       l: lineupValid() ? state.lineup.map((row) => row.map((id) => idx.get(id).toString(36).padStart(w, '0')).join('')).join('') : '',
+      m: lineupValid() ? state.mode : null,
+      e: state.edited ? 1 : 0,
     };
     const bytes = new TextEncoder().encode(JSON.stringify(payload));
     if (typeof CompressionStream !== 'undefined') return 'z' + b64url(await pipe(bytes, new CompressionStream('deflate-raw')));
@@ -141,17 +196,20 @@
     s.title = d.t || '';
     const [periods, periodLen, subEvery, maxStint, minRest, onCourt, seh, bal] = d.s;
     s.settings = { periods, periodLen, subEvery, maxStint, minRest, onCourt, startersEachHalf: !!seh, balancePositions: bal !== 0 };
+    settingIds.forEach((k) => (s.settings[k] = clampSetting(k, s.settings[k], defaults().settings[k])));
     s.players = d.p.map((a, i) => ({ id: i + 1, num: a[0] ?? '', name: a[1] ?? '', target: a[2] ?? '', starter: !!a[3], pos: a[4] || '', out: !!a[5] }));
     s.targets = {};
     s.players.forEach((p, i) => (s.targets[p.id] = d.g?.[i] ?? null));
+    s.mode = d.m ?? null;
+    s.edited = !!d.e;
     if (d.l) {
-      const w = d.w || 1;
-      const T = periods * periodLen;
+      const w = d.w === 2 ? 2 : 1;
+      const { periods: P, periodLen: PL, onCourt: NC } = s.settings;
       s.lineup = [];
-      for (let m = 0; m < T; m++) {
+      for (let m = 0; m < P * PL; m++) {
         const row = [];
-        for (let j = 0; j < onCourt; j++) {
-          const at = (m * onCourt + j) * w;
+        for (let j = 0; j < NC; j++) {
+          const at = (m * NC + j) * w;
           row.push(s.players[parseInt(d.l.slice(at, at + w), 36)]?.id);
         }
         s.lineup.push(row);
@@ -214,8 +272,7 @@
   });
   settingIds.forEach((k) =>
     $(k).addEventListener('change', (e) => {
-      const v = parseInt(e.target.value, 10);
-      if (!isNaN(v)) state.settings[k] = v;
+      state.settings[k] = clampSetting(k, e.target.value, state.settings[k]);
       renderSettings();
       changed();
     })
@@ -230,6 +287,7 @@
   });
   $('title').addEventListener('input', (e) => {
     state.title = e.target.value;
+    $('printTitle').textContent = state.title || 'Rotation';
     save();
   });
 
@@ -255,19 +313,17 @@
           p[f] = f === 'target' ? (inp.value === '' ? '' : Number(inp.value)) : inp.value;
           renderStatus();
           if (f === 'target') changed(true);
-          else { save(); renderResult(); }
+          else { commit(); renderResult(); }
         })
       );
+      // Default names ("Player 3") are replaced by typing, not by deleting them first.
+      const nameInp = tr.querySelector('.name');
+      nameInp.addEventListener('focus', () => { if (/^Player \d+$/.test(nameInp.value)) nameInp.select(); });
       tr.querySelector('.pos').addEventListener('change', (e) => {
         p.pos = e.target.value;
-        if (state.settings.balancePositions && lineupValid() && !undoStack.length) { changed(); return; }
-        // Re-sort rows by position but keep who plays when (preserves manual edits).
-        if (lineupValid()) {
-          const g = playerGrid();
-          state.lineup = lineupFromGrid(active().map((x) => g[x.id]));
-        }
-        save();
-        renderResult();
+        renderStatus();
+        if (lineupValid() && state.edited && !pending && !p.out) reseat();
+        else changed();
       });
       tr.querySelector('.inout').addEventListener('click', () => {
         p.out = !p.out;
@@ -282,6 +338,7 @@
         changed();
       });
       tr.querySelector('.del').addEventListener('click', () => {
+        if (p.name && !/^Player \d+$/.test(p.name) && !confirm(`Remove ${p.name} from the list?\n(If they just miss this game, untick ✓ instead.)`)) return;
         state.players = state.players.filter((x) => x !== p);
         renderRoster();
         changed();
@@ -291,14 +348,47 @@
     renderStatus();
   }
 
+  // Minutes each player plays out of position in the current rotation, per kind of row (r: 0 guard, 1 forward,
+  // 2 C). allowed: the position rules let them, because there aren't enough minutes for that position.
+  function posReport() {
+    if (!posRows() || !lineupValid()) return [];
+    const plan = posPlan(), idx = actIndex(), acc = new Map();
+    state.lineup.forEach((row) => row.forEach((id, k) => {
+      const pv = posValOf(byId(id));
+      if (!Rotation.badSlot(pv, k, 5)) return;
+      const r = Rotation.POS_GROUP[k], key = `${id}:${r}`;
+      if (!acc.has(key)) acc.set(key, { id, r, g: Rotation.groupOf(pv), min: 0, allowed: canPlay(plan, idx, id, k) });
+      acc.get(key).min++;
+    }));
+    return [...acc.values()].sort((a, b) => b.min - a.min);
+  }
+
+  // Why picked starter i (index in active()) can't start.
+  function dropReason(plan, i) {
+    const act = active();
+    const forced = plan.targets.map((t, k) => (t >= S() && !plan.starters.includes(k) ? k : -1)).filter((k) => k >= 0);
+    const onCourt = [...plan.starters, ...forced];
+    const g = plan.groups ? plan.groups[i] : -1;
+    const lim = g >= 0 && plan.limits.find(([m]) => (m >> g) & 1);
+    if (lim && onCourt.filter((k) => plan.groups[k] >= 0 && (lim[0] >> plan.groups[k]) & 1).length >= lim[1]) {
+      const gs = [0, 1, 2].filter((x) => (lim[0] >> x) & 1);
+      return lim[1] === 1 ? `only 1 ${GROUP_ONE[gs[0]]} fits on court` : `only ${lim[1]} ${listAnd(gs.map((x) => GROUPS[x]))} fit on court`;
+    }
+    if (forced.length) return `${listAnd(forced.map((k) => esc(shortName(act[k]))))} play${forced.length > 1 ? '' : 's'} the whole game`;
+    return `only ${N()} can start`;
+  }
+
   function renderStatus() {
     const s = state.settings;
     const need = S() * s.onCourt;
     const act = active();
-    const set = act.filter((p) => p.target !== '' && p.target != null);
+    const nm = (p) => esc(shortName(p));
+    const set = act.filter((p) => !isBlank(p.target));
     const sum = set.reduce((a, p) => a + Number(p.target || 0), 0);
     const blanks = act.length - set.length;
     const starters = act.filter((p) => p.starter).length;
+    const plan = currentPlan();
+    const fresh = plan && !state.edited; // after hand edits the rotation itself is the plan
     const parts = [];
     const outN = state.players.length - act.length;
     if (outN) parts.push(`${act.length} playing, ${outN} out`);
@@ -306,16 +396,74 @@
     if (blanks === 0) {
       if (sum === need) parts.push(`✅ ${sum} / ${need} minutes assigned`);
       else { cls = 'warn'; parts.push(`${sum} / ${need} minutes — will be ${sum < need ? 'scaled up' : 'scaled down'} to fit`); }
+    } else if (sum > need) {
+      cls = 'warn';
+      parts.push(`${sum} / ${need} minutes — too many, will be scaled down`);
     } else {
-      const each = (need - sum) / blanks;
-      if (each < 0) { cls = 'warn'; parts.push(`${sum} / ${need} minutes — too many, will be scaled down`); }
-      else parts.push(`${sum} / ${need} set, ${blanks} on auto (~${Math.round(each)} min each)`);
+      const auto = plan ? act.map((p, i) => (isBlank(p.target) ? plan.targets[i] : null)).filter((v) => v != null) : [];
+      const lo = Math.min(...auto), hi = Math.max(...auto);
+      const each = auto.length ? `~${lo}${hi > lo ? `–${hi}` : ''}` : `~${Math.round((need - sum) / blanks)}`;
+      parts.push(`${sum} / ${need} set, ${blanks} on auto (${each} min each)`);
     }
-    if (starters !== s.onCourt) { cls = 'warn'; parts.push(`⭐ ${starters} starters picked (pick ${s.onCourt}, or none to auto-pick)`); }
+
+    const dropped = fresh ? plan.dropped : [];
+    if (starters > s.onCourt) {
+      cls = 'warn';
+      parts.push(`⭐ ${starters} starters picked – only ${s.onCourt} can start${dropped.length ? ` (${listAnd(dropped.map((i) => nm(act[i])))} won't)` : ''}`);
+    } else {
+      if (starters && starters < s.onCourt) parts.push(`⭐ ${starters} starter${starters > 1 ? 's' : ''} picked – the rest are picked automatically`);
+      if (dropped.length) cls = 'warn';
+      dropped.forEach((i) => parts.push(`⭐ ${nm(act[i])} can't start – ${dropReason(plan, i)}`));
+    }
+
+    // Positions: typed minutes that had to change, and who plays out of position (and why).
+    if (fresh && plan.rows) {
+      const plain = Rotation.normalizeTargets(act.map((p) => p.target), S(), s.onCourt);
+      const ch = act.map((p, i) => i).filter((i) => !isBlank(act[i].target) && plan.targets[i] !== plain[i]);
+      if (ch.length) parts.push(`Minutes changed to keep positions: ${ch.slice(0, 4).map((i) => `${nm(act[i])} ${esc(act[i].target)}→${plan.targets[i]}`).join(', ')}${ch.length > 4 ? ', …' : ''}`);
+      const zero = act.map((p, i) => i).filter((i) => isBlank(act[i].target) && plan.targets[i] === 0 && plain[i] > 0);
+      if (zero.length) {
+        cls = 'warn';
+        parts.push(`⚠️ ${listAnd(zero.map((i) => nm(act[i])))} get${zero.length > 1 ? '' : 's'} 0 min – the typed minutes already fill the ${listAnd([...new Set(zero.map((i) => GROUP_ONE[plan.groups[i]]))])} spots`);
+      }
+    }
+    const rep = posReport();
+    const bad = rep.filter((o) => !o.allowed);
+    if (bad.length) {
+      cls = 'warn';
+      parts.push(`⚠️ Out of position: ${bad.slice(0, 4).map((o) => `${nm(byId(o.id))} (${esc(byId(o.id).pos)}) at ${ROW_NAMES[o.r]} ${o.min} min`).join(', ')}${bad.length > 4 ? ', …' : ''} – 🔀 New version fixes this`);
+    }
+    const help = [0, 1, 2].map((r) => rep.filter((o) => o.allowed && o.r === r)).filter((c) => c.length);
+    if (help.length) {
+      cls = 'warn';
+      const fixes = [];
+      help.forEach((c) => {
+        const r = c[0].r, total = c.reduce((a, o) => a + o.min, 0);
+        const has = act.some((p) => Rotation.groupOf(posValOf(p)) === r);
+        fixes.push(has ? `give your ${GROUPS[r]} more minutes` : `mark a player ${'GFC'[r]}`);
+        parts.push(`${has ? `Not enough ${GROUP_ONE[r]} minutes` : `No ${GROUP_ONE[r]}`}: ${listAnd([...new Set(c.map((o) => GROUPS[o.g]))])} play ${ROW_NAMES[r]} ${total} min (${c.map((o) => `${nm(byId(o.id))} ${o.min}`).join(', ')})`);
+      });
+      parts.push(`<small>To keep everyone in position: ${listAnd(fixes)}, or set a player's position to '–' (plays anywhere).</small>`);
+    } else if (!lineupValid() && plan && plan.rows && plan.mode !== 'strict') {
+      const t = [], short = new Set();
+      plan.rows.forEach((rs, g) => rs.forEach((r) => { if (r !== g) { t.push(`${GROUPS[g]} also play ${ROW_NAMES[r]}`); short.add(r); } }));
+      cls = 'warn';
+      parts.push(`Not enough ${listAnd([...short].map((r) => GROUP_ONE[r]))} minutes – ${listAnd(t)}`);
+    }
+    if (plan && plan.usePos && s.onCourt === 5 && plan.mode === 'soft') {
+      cls = 'warn';
+      parts.push("⚠️ These positions can't fill all 5 spots – positions only guide the lineups");
+    }
     if (act.length < s.onCourt) { cls = 'warn'; parts.push(`Need at least ${s.onCourt} players`); }
     const el = $('minuteStatus');
     el.className = `status ${cls}`;
     el.innerHTML = parts.join('<br>');
+    // Show what "auto" will be for each empty minutes box.
+    document.querySelectorAll('#rosterBody tr').forEach((tr) => {
+      const i = act.findIndex((p) => p.id === Number(tr.dataset.id));
+      const inp = tr.querySelector('.min');
+      if (inp) inp.placeholder = fresh && i >= 0 ? `~${plan.targets[i]}` : 'auto';
+    });
   }
 
   $('addPlayer').addEventListener('click', () => {
@@ -336,11 +484,12 @@
     state.players = [];
     state.lineup = null;
     state.pinned = [];
+    state.edited = false;
     state.teamId = null;
     renderTeams();
     renderRoster();
     renderResult();
-    save();
+    commit();
   });
   $('pasteBtn').addEventListener('click', () => {
     $('pasteBox').hidden = !$('pasteBox').hidden;
@@ -392,12 +541,13 @@
     state.lineup = null;
     state.targets = null;
     state.pinned = [];
+    state.edited = false;
     undoStack = [];
     renderSettings();
     renderTeams();
     renderRoster();
     renderResult();
-    save();
+    commit();
     toast(`${team.name} loaded – untick ✓ for players who are out`);
   });
   $('saveTeam').addEventListener('click', () => {
@@ -429,27 +579,47 @@
   });
 
   // ---------- Build ----------
+  // Roster or settings changed: an existing rotation is rebuilt (undoable).
   let debounce;
   function changed(typing) {
     save();
     if (!state.lineup) return;
     clearTimeout(debounce);
-    debounce = setTimeout(build, typing ? 600 : 0);
+    pending = true;
+    debounce = setTimeout(() => build(null, true), typing ? 600 : 0);
   }
+  // What the rotation is built from: names, numbers and players who are out don't matter.
+  const buildKey = (s) => JSON.stringify([s.settings, s.seed, s.players.filter((p) => !p.out).map((p) => [p.id, p.pos, p.target, p.starter])]);
 
-  function build() {
+  function build(note, auto) {
+    clearTimeout(debounce);
+    pending = false;
     const err = $('error');
     err.hidden = true;
+    const prev = state.lineup ? lastSnap : null;
+    const wasEdited = state.lineup && state.edited;
+    // Nothing the rotation depends on changed (e.g. an out player's details): keep it, but make the change undoable.
+    if (auto && prev && lineupValid() && buildKey(JSON.parse(prev)) === buildKey(state)) {
+      if (prev !== snap()) pushUndo(prev);
+      commit();
+      renderResult();
+      renderStatus();
+      return;
+    }
     try {
       const act = active();
       const r = Rotation.buildRotation(act.map((p) => ({ ...p })), { ...state.settings }, { seed: state.seed });
-      state.lineup = lineupFromGrid(r.grid);
+      state.mode = r.mode;
+      state.lineup = lineupFromGrid(r.grid, r.plan);
       state.targets = {};
       act.forEach((p, i) => (state.targets[p.id] = r.targets[i]));
       state.pinned = [];
-      undoStack = [];
-      save();
+      state.edited = false;
+      pushUndo(prev);
+      commit();
       renderResult();
+      renderStatus();
+      if (note || wasEdited) toast(`${note || 'Rotation rebuilt'}${wasEdited ? ' – ↶ Undo brings your changes back' : ''}`);
     } catch (e) {
       err.textContent = e.message;
       err.hidden = false;
@@ -458,25 +628,43 @@
     }
   }
 
+  // Positions changed in a hand-edited rotation: keep who plays when and only re-sort the rows. If someone
+  // would then be out of position, rebuild instead (undoable).
+  function reseat() {
+    const before = lastSnap;
+    state.mode = currentPlan()?.mode ?? 'off';
+    const g = playerGrid();
+    state.lineup = lineupFromGrid(active().map((x) => g[x.id]));
+    if (posReport().some((o) => !o.allowed)) { build('Positions changed – rotation rebuilt'); return; }
+    pushUndo(before);
+    commit();
+    renderResult();
+    renderStatus();
+  }
+
   $('buildBtn').addEventListener('click', () => {
     build();
     if (state.lineup) $('result').scrollIntoView({ behavior: 'smooth' });
   });
   $('rebuildBtn').addEventListener('click', () => {
-    if (undoStack.length && !confirm('Build a new version? Your manual changes will be lost.')) return;
     state.seed = (state.seed || 1) + 1;
-    build();
-    toast('New version built');
+    build('New version built');
   });
   $('undoBtn').addEventListener('click', () => {
-    if (!undoStack.length) return;
-    const u = JSON.parse(undoStack.pop());
-    state.lineup = u.lineup;
-    state.targets = u.targets;
-    state.pinned = u.pinned || [];
-    syncTargetsToLineup();
-    save();
+    // A change whose rebuild hasn't run yet has no undo step of its own: undo just that change.
+    const s = pending ? lastSnap : undoStack.pop();
+    if (!s) return;
+    clearTimeout(debounce);
+    pending = false;
+    const typed = new Map(state.players.map((p) => [p.id, [p.name, p.num]]));
+    Object.assign(state, JSON.parse(s));
+    // Names and numbers aren't undone: keep what was typed since.
+    state.players.forEach((p) => { if (typed.has(p.id)) [p.name, p.num] = typed.get(p.id); });
+    renderSettings();
+    renderRoster();
     renderResult();
+    commit();
+    toast('Undone');
   });
   $('printBtn').addEventListener('click', () => window.print());
 
@@ -536,6 +724,9 @@
     $('undoBtn').hidden = !undoStack.length;
     renderLineup();
     renderMinutes();
+    const mp = minutesPlayed();
+    $('printTitle').textContent = state.title || 'Rotation';
+    $('printMinutes').textContent = `Minutes: ${active().map((p) => `${shortName(p)} ${mp[p.id]}`).join(' · ')}`;
     renderSubs();
     renderChart();
   }
@@ -596,12 +787,13 @@
     const pos = new Map(act.map((p, i) => [p.id, i]));
     const locked = new Set(state.pinned.filter((x) => x !== id && pos.has(x)).map((x) => pos.get(x)));
     const luIdx = state.lineup.map((row) => row.map((x) => pos.get(x)));
-    const res = Rotation.adjustMinutes(luIdx, idx, newVal, act.map(posValOf), { ...state.settings }, locked);
+    const res = Rotation.adjustMinutes(luIdx, idx, newVal, act.map(posValOf), { ...state.settings, ...posPlan() }, locked);
     pushUndo();
     state.lineup = res.map((row) => row.map((i) => act[i].id));
     if (!state.pinned.includes(id)) state.pinned.push(id);
+    state.edited = true;
     syncTargetsToLineup();
-    save();
+    commit();
     renderResult();
     const after = minutesPlayed();
     const diffs = act
@@ -618,7 +810,7 @@
     const id = Number(row.dataset.id);
     if (e.target.closest('.pin')) {
       state.pinned = state.pinned.includes(id) ? state.pinned.filter((x) => x !== id) : [...state.pinned, id];
-      save();
+      commit();
       renderMinutes();
       return;
     }
@@ -650,15 +842,17 @@
   }
 
   function renderSubs() {
+    const rows = posRows();
+    const tag = (j) => (rows ? `<small>${POS[j]}</small> ` : '');
     let html = '';
     for (let k = 0; k < state.settings.periods; k++) {
       const start = state.lineup[k * L()];
-      html += `<div class="period"><h3>${periodTitle(k)}</h3><div class="lineup"><b>Start:</b> ${start.map((id, j) => `<small>${slotLabel(j)}</small> ${esc(shortName(byId(id)))}`).join(', ')}</div><ul>`;
+      html += `<div class="period"><h3>${periodTitle(k)}</h3><div class="lineup"><b>Start:</b> ${start.map((id, j) => `${tag(j)}${esc(shortName(byId(id)))}`).join(', ')}</div><ul>`;
       for (let s = k * L() + 1; s < (k + 1) * L(); s++) {
         const pairs = subsAt(s);
         if (!pairs.length) continue;
         html += `<li><span class="time">${clock(s)}</span><div>${pairs
-          .map((pr) => `<div><span class="in">${esc(shortName(byId(pr.in)))}</span> for <span class="out">${esc(shortName(byId(pr.out)))}</span> <small>${slotLabel(pr.j)}</small></div>`)
+          .map((pr) => `<div><span class="in">${esc(shortName(byId(pr.in)))}</span> for <span class="out">${esc(shortName(byId(pr.out)))}</span>${rows ? ` <small>${POS[pr.j]}</small>` : ''}</div>`)
           .join('')}</div></li>`;
       }
       html += '</ul></div>';
@@ -694,7 +888,7 @@
     const base = k * L();
     edit = { j, k };
     const cur = byId(state.lineup[a][j]);
-    $('dlgTitle').textContent = `${slotLabel(j)} · ${periodTitle(k)}`;
+    $('dlgTitle').textContent = posRows() ? `${POS[j]} · ${periodTitle(k)}` : periodTitle(k);
     $('dlgNow').innerHTML = `Now: <b>${esc(label(cur))}</b> ${clock(a)}–${endClock(b)}`;
     let from = '', to = '';
     for (let m = 0; m < L(); m++) from += `<option value="${base + m}" ${base + m === a ? 'selected' : ''}>${L() - m}:00</option>`;
@@ -725,8 +919,20 @@
     const curIds = new Set();
     for (let s = a; s < b; s++) curIds.add(state.lineup[s][j]);
     const mp = minutesPlayed();
-    const list = active()
-      .filter((p) => !(curIds.size === 1 && curIds.has(p.id)))
+    // Only players who may play this row; one already on court swaps rows, so the other player must fit theirs.
+    const plan = posPlan(), idx = actIndex();
+    const fits = (p) => {
+      if (!canPlay(plan, idx, p.id, j)) return false;
+      for (let s = a; s < b; s++) {
+        const k = state.lineup[s].indexOf(p.id);
+        if (k >= 0 && k !== j && !canPlay(plan, idx, state.lineup[s][j], k)) return false;
+      }
+      return true;
+    };
+    const cands = active().filter((p) => !(curIds.size === 1 && curIds.has(p.id)));
+    const hidden = cands.filter((p) => !fits(p)).length;
+    const list = cands
+      .filter(fits)
       .map((p) => {
         let onCourt = false;
         for (let s = a; s < b; s++) if (state.lineup[s].includes(p.id) && state.lineup[s][j] !== p.id) onCourt = true;
@@ -742,7 +948,8 @@
           <span class="meta">${onCourt ? '<em>on court → swap</em> ' : ''}${mp[p.id]}${t != null ? `/${t}` : ''} min${need > 0 ? ` <b class="need">+${need}</b>` : need < 0 ? ` <b class="over">${need}</b>` : ''}</span>
         </button>`
       )
-      .join('');
+      .join('') +
+      (hidden ? `<p class="hint dlg-note">${list.length ? `Only players who can play ${POS[j]} are listed.` : `Nobody else can play ${POS[j]} here.`} Position '–' = plays anywhere.</p>` : '');
   }
 
   $('dlgPlayers').addEventListener('click', (e) => {
@@ -753,8 +960,9 @@
     pushUndo();
     for (let s = a; s < b; s++) setCell(state.lineup, s, edit.j, id);
     $('editDlg').close();
+    state.edited = true;
     syncTargetsToLineup();
-    save();
+    commit();
     renderResult();
   });
   $('editDlg').addEventListener('click', (e) => {
@@ -790,7 +998,7 @@
     const d = {
       j, lo, hi, x0: e.clientX, rect: bar.getBoundingClientRect(), moved: false,
       snapshot: lu.map((r) => r.slice()),
-      undo: JSON.stringify({ lineup: state.lineup, targets: state.targets, pinned: state.pinned }),
+      undo: snap(),
     };
     if (handle) {
       const t = Number(handle.dataset.t);
@@ -834,13 +1042,21 @@
         ? 'Drag the white line between players to change the sub time'
         : `${shortName(byId(drag.P))} ${clock(drag.a + m)}–${endClock(drag.b + m)}`;
     }
+    // Keep positions: don't follow the pointer into a lineup that puts someone in a row they can't play.
+    const plan = posPlan(), idx = actIndex();
+    for (let s = drag.lo; s < drag.hi; s++) {
+      for (let k = 0; k < N(); k++) {
+        const id = lu[s][k];
+        if (id !== drag.snapshot[s][k] && !canPlay(plan, idx, id, k)) { toast(`${shortName(byId(id))} can't play ${POS[k]}`); return; }
+      }
+    }
     state.lineup = lu;
     toast(tip);
     cancelAnimationFrame(dragFrame);
     dragFrame = requestAnimationFrame(() => { renderLineup(); renderMinutes(); });
   });
 
-  function endDrag(commit) {
+  function endDrag(apply) {
     if (!drag) return;
     const d = drag;
     drag = null;
@@ -848,14 +1064,14 @@
     dragJustEnded = true;
     setTimeout(() => (dragJustEnded = false), 50);
     cancelAnimationFrame(dragFrame);
-    const changed = JSON.stringify(state.lineup) !== JSON.stringify(d.snapshot);
-    if (!commit || !changed) {
+    const differs = JSON.stringify(state.lineup) !== JSON.stringify(d.snapshot);
+    if (!apply || !differs) {
       state.lineup = d.snapshot;
     } else {
-      undoStack.push(d.undo);
-      if (undoStack.length > 50) undoStack.shift();
+      pushUndo(d.undo);
+      state.edited = true;
       syncTargetsToLineup();
-      save();
+      commit();
     }
     renderResult();
   }
@@ -1023,7 +1239,9 @@
   // ---------- Init ----------
   (async function init() {
     state = await load();
-    save();
+    // Rotations saved by older versions don't know their position rules: use what a build would use now.
+    if (lineupValid() && state.mode == null) state.mode = currentPlan()?.mode ?? 'off';
+    commit();
     renderSettings();
     renderTeams();
     renderRoster();

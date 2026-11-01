@@ -198,14 +198,33 @@ dialog::backdrop { background: rgba(20, 20, 25, 0.45); }
 .dlg-player .nm small { color: var(--muted); font-weight: 400; }
 .dlg-player .meta { font-size: 0.82rem; color: var(--muted); white-space: nowrap; }
 .dlg-player em { color: var(--warn); font-style: normal; }
+.dlg-note { margin: 6px 2px 0; font-size: 0.82rem; }
+.print-only { display: none; }
 .need { color: var(--ok); }
 .over { color: var(--bad); }
 
 @media print {
   body { background: #fff; }
   header, #setup, #roster, footer, .noprint, .result-head .buttons, .toast, dialog { display: none !important; }
-  .lu-card { break-inside: avoid; }
-  .card { box-shadow: none; padding: 0; }
+  .result-head { display: none !important; }
+  .print-only { display: block; }
+  h1.print-only { font-size: 1.3rem; margin: 0 0 6px; }
+  p.print-only { margin: 8px 0; font-size: 0.9rem; }
+  .lu-card { break-inside: avoid; padding: 8px 14px; }
+  /* Compact so the lineups and the sub list fit one landscape page for the bench. */
+  .lu-cards { gap: 8px; margin-top: 0; }
+  .lu-period h3 { margin-bottom: 2px; }
+  .lu-axis { height: 16px; margin-bottom: 2px; }
+  .lu-row { height: 19px; margin-bottom: 3px; }
+  #result { zoom: 0.92; }
+  .lu-seg .chip { font-size: 0.72rem; padding: 1px 5px; }
+  .subs-title { margin: 10px 0 6px; }
+  .subs { grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .period { padding: 6px 8px; }
+  .period li { padding: 2px 0; font-size: 0.8rem; }
+  .period .lineup { font-size: 0.8rem; }
+  .card { box-shadow: none; padding: 0; margin: 0; }
+  main { padding: 0; max-width: none; }
   .chart-wrap { overflow: visible; }
   .chart td.cell { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   @page { size: landscape; margin: 10mm; }

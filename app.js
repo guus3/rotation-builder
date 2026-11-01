@@ -322,7 +322,7 @@
         <td class="c-in"><button class="inout ${p.out ? '' : 'on'}" aria-label="Playing this game" title="Playing this game">${p.out ? '' : '✓'}</button></td>
         <td><input class="name" value="${esc(p.name)}" data-f="name" placeholder="Name" /></td>
         <td><select class="pos" data-f="pos">${POS_OPTIONS.map((o) => `<option value="${o}" ${o === (p.pos || '') ? 'selected' : ''}>${o || '–'}</option>`).join('')}</select></td>
-        <td><input class="min" type="number" inputmode="numeric" min="0" max="${S()}" value="${esc(p.target)}" placeholder="auto" data-f="target" /></td>
+        <td><input class="min" type="number" inputmode="numeric" min="0" max="${S()}" value="${p.out ? 0 : esc(p.target)}" placeholder="auto" data-f="target" ${p.out ? 'disabled' : ''} /></td>
         <td class="c-pick"><button class="pick star" data-flag="starter" aria-label="Starter"></button></td>
         <td class="c-pick"><button class="pick fin" data-flag="finisher" aria-label="Finisher – on court at the end of the game"></button></td>
         <td><button class="del" aria-label="Remove">✕</button></td>`;

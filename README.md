@@ -11,7 +11,7 @@ Enter players and target minutes → get a minute-by-minute rotation chart and s
   - The edit dialog and drag only offer players who may play that row.
 - Lineup view per quarter with position rows (PG/SG/SF/PF/C, or 1–5 when no positions are set); tap a bar to swap a player in for any time range.
 - Undo covers hand edits and also the automatic rebuild after a roster or settings change, so hand edits are never lost.
-- Teams: save your roster once as a team, pick it each game and untick players who are out (saved in the browser).
+- Teams: save your roster once as a team, pick it each game and untick players who are out (saved in the browser). Out players show 0 in the Min column; tick them back in to restore their previous minutes setting.
 - Editor: drag the white line between two bars to move a sub, drag a bar sideways to shift a stint, or use − / + (or type) per player to change minutes – the rotation and other players adjust automatically. The lock keeps a player's minutes fixed.
 - Share link: the whole rotation is compressed into the URL – whoever opens it gets an editable copy (no server/login).
 - Save image: exports a PNG of the lineup + minutes (share sheet on phones, download on desktop). Print gives a compact bench sheet (one landscape page for a typical game) with the game name, lineups, minutes and the sub list.

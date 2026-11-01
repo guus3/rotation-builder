@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Rotation Builder</title>
+  <meta name="description" content="Enter player minutes, get a full basketball rotation and substitution sheet." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏀</text></svg>" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>🏀 Rotation Builder</h1>
+    <p class="tag">Enter minutes → get the rotation.</p>
+  </header>
+
+  <main>
+    <section class="card" id="setup">
+      <h2><span class="step">1</span> Game</h2>
+      <div class="row">
+        <label>Format
+          <select id="preset">
+            <option value="4x10">4 × 10 min (FIBA)</option>
+            <option value="4x12">4 × 12 min (NBA)</option>
+            <option value="4x8">4 × 8 min (youth)</option>
+            <option value="2x20">2 × 20 min (NCAA)</option>
+            <option value="custom">Custom</option>
+          </select>
+        </label>
+        <label>Periods <input type="number" id="periods" min="1" max="8" /></label>
+        <label>Minutes / period <input type="number" id="periodLen" min="2" max="30" /></label>
+      </div>
+      <details>
+        <summary>Rotation style (optional)</summary>
+        <div class="row">
+          <label>Sub roughly every
+            <select id="subEvery">
+              <option value="1">1 min</option>
+              <option value="2">2 min</option>
+              <option value="3">3 min</option>
+              <option value="4">4 min</option>
+              <option value="5">5 min</option>
+            </select>
+          </label>
+          <label>Max minutes in a row <input type="number" id="maxStint" min="2" max="40" /></label>
+          <label>Min rest before return <input type="number" id="minRest" min="0" max="20" /></label>
+          <label>Players on court <input type="number" id="onCourt" min="1" max="7" /></label>
+          <label class="check"><input type="checkbox" id="startersEachHalf" /> Starters start 2nd half</label>
+        </div>
+      </details>
+    </section>
+
+    <section class="card" id="roster">
+      <h2><span class="step">2</span> Players &amp; minutes</h2>
+      <p class="hint">Leave minutes empty to split the rest evenly. ⭐ = starter. <b>0</b> = won't play.</p>
+      <table class="roster">
+        <thead><tr><th>#</th><th>Name</th><th>Min</th><th title="Starter">⭐</th><th></th></tr></thead>
+        <tbody id="rosterBody"></tbody>
+      </table>
+      <div class="row buttons">
+        <button id="addPlayer" class="secondary">+ Add player</button>
+        <button id="pasteBtn" class="secondary">Paste list</button>
+        <button id="evenBtn" class="secondary">Even minutes</button>
+        <button id="clearBtn" class="ghost">Clear</button>
+      </div>
+      <div id="pasteBox" hidden>
+        <textarea id="pasteText" rows="6" placeholder="One player per line, e.g.&#10;4 Mikko 30&#10;11 Jussi 25&#10;Ville"></textarea>
+        <button id="pasteApply">Use this list</button>
+      </div>
+      <div id="minuteStatus" class="status"></div>
+      <button id="buildBtn" class="big">Build rotation</button>
+      <div id="error" class="error" hidden></div>
+    </section>
+
+    <section class="card" id="result" hidden>
+      <div class="result-head">
+        <h2><span class="step">3</span> Rotation</h2>
+        <div class="buttons">
+          <button id="rebuildBtn" class="secondary" title="Try a different variation">🔀 Another version</button>
+          <button id="shareBtn" class="secondary">🔗 Share link</button>
+          <button id="printBtn" class="secondary">🖨️ Print</button>
+        </div>
+      </div>
+      <p class="hint noprint">Tap a cell to put a player in/out by hand. Red numbers = needs fixing.</p>
+      <div class="chart-wrap"><table id="chart" class="chart"></table></div>
+
+      <h2 class="subs-title">Substitutions</h2>
+      <div id="subs" class="subs"></div>
+    </section>
+  </main>
+
+  <footer class="noprint">Saved automatically in this browser.</footer>
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="rotation.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

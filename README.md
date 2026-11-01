@@ -2,15 +2,18 @@
 
 Enter players and target minutes → get a minute-by-minute rotation chart and substitution sheet.
 
-- Paste a roster (`4 Mikko 32` per line), leave minutes blank to split evenly, ⭐ starters.
-- Rotation is built automatically: exact minutes, 5 on court, subs on chosen intervals, max stint & rest rules.
-- Position-aware: with positions set, lineups are balanced (ball-handler + big on court, no double centres) while keeping exact minutes. Toggle under *Rotation style*.
-- Lineup view per quarter with position rows (PG/SG/SF/PF/C); tap a bar to swap a player in for any time range (with undo).
+- Paste a roster (`4 Mikko 32` per line), leave minutes blank to split evenly, ⭐ starters (pick 5, or just the ones you want – the rest are picked automatically).
+- Rotation is built automatically: exact minutes, 5 on court, subs on chosen intervals, max stint & rest rules. Subs are bunched into fewer stoppages, a quarter break counts as rest, and the players with the most minutes finish the game where possible.
+- Positions stay put (*Keep players in their positions*, under *Rotation style*): guards (PG, SG, G) only play the two guard rows, forwards (SF, PF, F) the two forward rows, centres the C row. `–` = plays anywhere.
+  - If the typed minutes don't fit the position rows, they're adjusted and the change is shown (e.g. *Minutes changed to keep positions: Mikko 30→27*).
+  - If the roster can't fill a position (e.g. no centre), the nearest group helps out and the app says who, for how long and how to avoid it (set a position to `–`).
+  - The edit dialog and drag only offer players who may play that row.
+- Lineup view per quarter with position rows (PG/SG/SF/PF/C, or 1–5 when no positions are set); tap a bar to swap a player in for any time range.
+- ↶ Undo covers hand edits and also the automatic rebuild after a roster or settings change, so hand edits are never lost.
 - 💾 Teams: save your roster once as a team, pick it each game and untick ✓ players who are out (saved in the browser).
 - Editor: drag the white line between two bars to move a sub, drag a bar sideways to shift a stint, or use − / + (or type) per player to change minutes – the rotation and other players adjust automatically. 📌 keeps a player's minutes fixed.
-- Forwards (F) are never used at C.
 - 🔗 Share link: the whole rotation is compressed into the URL – whoever opens it gets an editable copy (no server/login).
-- 🖼️ Image: exports a PNG of the lineup + minutes (share sheet on phones, download on desktop). Print also supported.
+- 🖼️ Image: exports a PNG of the lineup + minutes (share sheet on phones, download on desktop). 🖨️ Print gives a compact bench sheet (one landscape page for a typical game) with the game name, lineups, minutes and the sub list.
 - Paste format: `4 Mikko PG 32` (number, name, optional position, optional minutes). Data is saved in the browser.
 
 Static site (no backend): `index.html`, `app.js`, `rotation.js` (engine), `style.css`.

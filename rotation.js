@@ -53,6 +53,8 @@
   }
 
   const POS_VAL = { PG: 0, SG: 1, SF: 2, PF: 3, C: 4, G: 0.5, F: 2.5 };
+  // Forwards (F = SF/PF) must never be used as the centre.
+  const forbidden = (pv, k, N) => pv === POS_VAL.F && N >= 5 && k === N - 1;
 
   // Cost of how badly a (partial) lineup covers the PG..C spots. 0 = every player fits a spot.
   // Players without a position are flexible and cost nothing.
@@ -73,7 +75,7 @@
           if (used[k]) continue;
           used[k] = true;
           const d = Math.max(0, Math.abs(pv[j] - tgt(k)) - 0.5);
-          rec(j + 1, acc + d + d * d);
+          rec(j + 1, acc + d + d * d + (forbidden(pv[j], k, N) ? 8 : 0));
           used[k] = false;
         }
       })(0, 0);
@@ -282,7 +284,7 @@
         let c = 0;
         perm.forEach((p, r) => {
           const pv = posVals[p];
-          c += pv == null ? 0 : Math.abs(pv - slotTarget(free[r]));
+          c += pv == null ? 0 : Math.abs(pv - slotTarget(free[r])) + (forbidden(pv, free[r], N) ? 100 : 0);
           c += 1e-3 * Math.abs(inc.indexOf(p) - r);
           if (prev && reset && prev.includes(p) && prev[free[r]] !== p) c += 0.3;
         });

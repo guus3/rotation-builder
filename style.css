@@ -107,16 +107,6 @@ table.roster td.c-pick { text-align: center; }
 .pick.blocked:hover { border-color: #d9d3c9; }
 .pick:focus-visible, .inout:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 button.small { padding: 5px 10px; font-size: 0.85rem; }
-.picks { margin-top: 12px; border: 1px solid var(--line); border-radius: 8px; }
-.pick-line {
-  display: grid; grid-template-columns: 7em 1fr auto; grid-template-areas: "lbl names btns";
-  align-items: center; gap: 4px 8px; padding: 8px 10px;
-}
-.pick-line + .pick-line { border-top: 1px solid var(--line); }
-.pick-lbl { grid-area: lbl; font-weight: 600; }
-.pick-names { grid-area: names; min-width: 0; }
-.pick-names small { color: var(--muted); }
-.pick-btns { grid-area: btns; display: flex; gap: 6px; justify-content: flex-end; }
 table.roster .min { -moz-appearance: textfield; appearance: textfield; }
 table.roster .min::-webkit-inner-spin-button, table.roster .min::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 .del { background: transparent; color: #b5b0a8; padding: 6px 8px; }
@@ -282,7 +272,6 @@ dialog::backdrop { background: rgba(20, 20, 25, 0.45); }
   table.roster .pos { width: 54px; }
   .inout { width: 30px; height: 30px; }
   .pick { width: 30px; height: 30px; }
-  .pick-line { grid-template-columns: 1fr auto; grid-template-areas: "lbl btns" "names names"; }
   table.roster th.c-pick { font-size: 0.72rem; }
   .del { padding: 6px 2px; }
 }

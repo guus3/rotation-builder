@@ -418,8 +418,8 @@
   }
 
   const PICK = {
-    starter: { one: 'starter', verb: 'start', lineup: 'Starting', none: 'Not picked – picked automatically' },
-    finisher: { one: 'finisher', verb: 'finish', lineup: 'Closing', none: 'Not picked – the players with the most minutes' },
+    starter: { one: 'starter', verb: 'start' },
+    finisher: { one: 'finisher', verb: 'finish' },
   };
   // Why player i (index in active()) can't be picked as a starter / finisher now (null = can be picked).
   function pickBlock(plan, i, flag) {
@@ -436,7 +436,7 @@
     const why = new DOMParser().parseFromString(dropReason(plan, i, flag === 'finisher', on), 'text/html').body.textContent;
     return `${who} can't ${w.verb} – ${why}`;
   }
-  // Pick buttons, column counters and the starting / closing five summary.
+  // Pick buttons and column counters.
   function renderPicks(plan) {
     const act = active(), idx = actIndex();
     document.querySelectorAll('#rosterBody tr').forEach((tr) => {
@@ -454,32 +454,12 @@
         else delete btn.dataset.block;
       });
     });
-    const parts = ['starter', 'finisher'].map((f) => {
-      const w = PICK[f], picked = act.filter((p) => p[f]);
-      $(`${f}Count`).textContent = `${picked.length}/${N()}`;
-      $(`${f}Count`).classList.toggle('full', picked.length === N());
-      const names = picked.map((p) => `${esc(shortName(p))}${p.pos ? ` <small>${esc(p.pos)}</small>` : ''}`).join(', ');
-      const rest = N() - picked.length;
-      const more = picked.length && rest > 0 ? ` <small>+ ${rest} ${f === 'starter' ? 'picked automatically' : 'with the most minutes'}</small>` : '';
-      let btns = '';
-      const same = act.every((p) => !!p.starter === !!p.finisher);
-      if (f === 'finisher' && act.some((p) => p.starter) && !same) btns += '<button type="button" class="secondary small" data-pick="copy">Same as starters</button>';
-      if (picked.length) btns += `<button type="button" class="ghost small" data-pick="clear" data-flag="${f}">Clear</button>`;
-      return `<div class="pick-line"><span class="pick-lbl">${w.lineup} ${N()}</span><span class="pick-names">${names ? names + more : `<small>${w.none}</small>`}</span><span class="pick-btns">${btns}</span></div>`;
+    ['starter', 'finisher'].forEach((f) => {
+      const n = act.filter((p) => p[f]).length;
+      $(`${f}Count`).textContent = `${n}/${N()}`;
+      $(`${f}Count`).classList.toggle('full', n === N());
     });
-    $('picks').innerHTML = parts.join('');
   }
-  $('picks').addEventListener('click', (e) => {
-    const b = e.target.closest('button[data-pick]');
-    if (!b) return;
-    const act = active();
-    if (b.dataset.pick === 'copy') {
-      act.forEach((p) => (p.finisher = !!p.starter));
-      toast('The starters now also finish the game');
-    } else act.forEach((p) => (p[b.dataset.flag] = false));
-    renderStatus();
-    changed();
-  });
 
   function renderStatus() {
     const s = state.settings;

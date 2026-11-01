@@ -1,6 +1,7 @@
 (function () {
   const STORE_KEY = 'rotation-builder-v1';
   const TEAMS_KEY = 'rotation-builder-teams';
+  const TIPS_KEY = 'rotation-builder-tips'; // tips the coach has hidden
   const $ = (id) => document.getElementById(id);
   const POS = ['PG', 'SG', 'SF', 'PF', 'C'];
   const POS_OPTIONS = ['', 'PG', 'SG', 'SF', 'PF', 'C', 'G', 'F'];
@@ -618,7 +619,26 @@
     $('teamSel').innerHTML = `<option value="">${teams.length ? '— pick a team —' : '— no saved teams yet —'}</option>` +
       teams.map((t) => `<option value="${t.id}" ${t.id === state.teamId ? 'selected' : ''}>${esc(t.name)} (${t.players.length})</option>`).join('');
     $('delTeam').hidden = !state.teamId;
+    renderTips();
   }
+
+  // ---------- Tips ----------
+  // One-time tips: the team tip until a team is saved, the edit tip until "Got it" ("How to edit" shows it again).
+  function hiddenTips() {
+    try { return JSON.parse(localStorage.getItem(TIPS_KEY)) || {}; } catch (e) { return {}; }
+  }
+  function setTip(name, hide) {
+    try { localStorage.setItem(TIPS_KEY, JSON.stringify({ ...hiddenTips(), [name]: hide })); } catch (e) { /* private mode */ }
+    renderTips();
+  }
+  function renderTips() {
+    const h = hiddenTips();
+    $('teamTip').hidden = !!h.team || loadTeams().length > 0;
+    $('editTip').hidden = !!h.edit;
+    $('editHelp').hidden = !h.edit;
+  }
+  document.querySelectorAll('[data-tip]').forEach((b) => b.addEventListener('click', () => setTip(b.dataset.tip, true)));
+  $('editHelp').addEventListener('click', () => { setTip('edit', false); $('editTip').scrollIntoView({ block: 'nearest', behavior: 'smooth' }); });
   $('teamSel').addEventListener('change', (e) => {
     const id = Number(e.target.value);
     const team = loadTeams().find((t) => t.id === id);

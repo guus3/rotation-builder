@@ -62,7 +62,23 @@
         <button id="saveTeam" class="secondary" title="Save these players as a team you can pick every game">Save team</button>
         <button id="delTeam" class="ghost" title="Delete this team" hidden>Delete</button>
       </div>
-      <p class="hint">Save your players once as a team, then pick it every game and untick who's not playing. Leave minutes empty to split the rest evenly. Start / Finish: who is on court at the start and at the end of the game – pick 5, or just the ones you want. Positions are kept: guards (PG, SG, G) only play guard, forwards (SF, PF, F) forward, centres C. '–' = plays anywhere.</p>
+      <div id="teamTip" class="tip" hidden>
+        <p>Tip: save your players as a team to reuse them every game.</p>
+        <button type="button" class="ghost small" data-tip="team" aria-label="Hide this tip">Hide</button>
+      </div>
+      <div class="hint-row">
+        <p class="hint">Leave minutes empty to split them evenly.</p>
+        <details class="help">
+          <summary>How it works</summary>
+          <ul>
+            <li><b>In</b> – untick players who miss this game.</li>
+            <li><b>Min</b> – minutes for the game. Empty boxes share what's left (shown as ~20).</li>
+            <li><b>Start / Finish</b> – who is on court at the start and at the end of the game. Pick 5, or just the ones you want; the rest are picked automatically.</li>
+            <li><b>Pos</b> – players stay in position: guards (PG, SG, G) only play guard, forwards (SF, PF, F) forward, centres C. '–' plays anywhere.</li>
+            <li><b>Team</b> – save your players once, then pick the team every game.</li>
+          </ul>
+        </details>
+      </div>
       <table class="roster">
         <thead><tr><th title="Playing this game">In</th><th>#</th><th>Name</th><th>Pos</th><th>Min</th><th class="c-pick" title="On court at the start">Start<small id="starterCount"></small></th><th class="c-pick" title="On court at the end of the game">Finish<small id="finisherCount"></small></th><th></th></tr></thead>
         <tbody id="rosterBody"></tbody>
@@ -86,7 +102,7 @@
     <section class="card" id="result" hidden>
       <h1 id="printTitle" class="print-only"></h1>
       <div class="result-head">
-        <h2><span class="step">3</span> Rotation</h2>
+        <h2><span class="step">3</span> Rotation <button type="button" id="editHelp" class="link noprint" hidden>How to edit</button></h2>
         <div class="buttons">
           <button id="undoBtn" class="secondary" hidden>Undo</button>
           <button id="rebuildBtn" class="secondary" title="Build a different variation">New version</button>
@@ -95,7 +111,10 @@
           <button id="printBtn" class="secondary">Print</button>
         </div>
       </div>
-      <p class="hint noprint">Tap a bar to change who plays there. Drag the white line between two players to move the sub, or drag a bar sideways. Use − / + below to change a player's minutes – the others adjust automatically (the lock keeps a player's minutes fixed).</p>
+      <div id="editTip" class="tip noprint" hidden>
+        <p>Tap a bar to change who plays. Drag the white line between two players to move a sub. Use − / + to change minutes – the others adjust, and the lock keeps a player's minutes fixed.</p>
+        <button type="button" class="secondary small" data-tip="edit">Got it</button>
+      </div>
       <div id="lineup" class="lu-cards"></div>
 
       <div id="minutes" class="minutes noprint"></div>

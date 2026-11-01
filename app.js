@@ -2,6 +2,13 @@
   const STORE_KEY = 'rotation-builder-v1';
   const TEAMS_KEY = 'rotation-builder-teams';
   const TIPS_KEY = 'rotation-builder-tips'; // tips the coach has hidden
+  const ROSTER_KEY = 'rotation-builder-roster';
+  const ROSTER_VERSION = '1';
+  const TEAM = [
+    ['Akseli', 'F'], ['Anssi', 'F'], ['Beni', 'C'], ['Eero', 'F'], ['Erkka', 'G'], ['Erno', 'F'], ['Lauri', 'G'],
+    ['Markus', 'F'], ['Matias', 'C'], ['Sele', 'G'], ['Tomi', 'F'], ['Waltteri S', 'G'], ['Waltteri V', 'G'],
+  ];
+  const teamRoster = () => TEAM.map(([name, pos], i) => ({ id: i + 1, num: '', name, pos, target: '', starter: false, finisher: false, out: false }));
   const $ = (id) => document.getElementById(id);
   const POS = ['PG', 'SG', 'SF', 'PF', 'C'];
   const POS_OPTIONS = ['', 'PG', 'SG', 'SF', 'PF', 'C', 'G', 'F'];
@@ -161,6 +168,7 @@
   }
   function save() {
     localStorage.setItem(STORE_KEY, JSON.stringify(state));
+    localStorage.setItem(ROSTER_KEY, ROSTER_VERSION);
   }
 
   const b64url = (bytes) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -245,25 +253,15 @@
           } catch (e) { /* ignore */ }
         }
         delete s.grid;
+        // Older saved games (generic or empty rosters) switch to the team roster once.
+        if (localStorage.getItem(ROSTER_KEY) !== ROSTER_VERSION || !s.players.length) {
+          Object.assign(s, { players: teamRoster(), lineup: null, targets: null, pinned: [], teamId: null, edited: false });
+        }
         return s;
       }
     } catch (e) { console.warn(e); }
     const s = defaults();
-    s.players = [
-      ['Akseli', 'F'],
-      ['Anssi', 'F'],
-      ['Beni', 'C'],
-      ['Eero', 'F'],
-      ['Erkka', 'G'],
-      ['Erno', 'F'],
-      ['Lauri', 'G'],
-      ['Markus', 'F'],
-      ['Matias', 'C'],
-      ['Sele', 'G'],
-      ['Tomi', 'F'],
-      ['Waltteri S', 'G'],
-      ['Waltteri V', 'G'],
-    ].map(([name, pos], i) => ({ id: i + 1, num: '', name, pos, target: '', starter: false, finisher: false, out: false }));
+    s.players = teamRoster();
     return s;
   }
 

@@ -194,7 +194,53 @@
     return ev;
   }
 
-  const api = { normalizeTargets, buildRotation, subEvents, analyze };
+  function permutations(arr) {
+    if (arr.length <= 1) return [arr.slice()];
+    const out = [];
+    arr.forEach((v, i) => {
+      permutations([...arr.slice(0, i), ...arr.slice(i + 1)]).forEach((p) => out.push([v, ...p]));
+    });
+    return out;
+  }
+
+  // posVals: per player a number on the PG(0)..C(4) scale, or null for "any".
+  // Players already on court keep their slot; incoming players take the freed slots
+  // that best match their position. Returns S rows of N player indices.
+  // At period starts everyone is re-placed by position (small penalty for changing rows).
+  function assignSlots(grid, posVals, N, periodLen) {
+    const S = grid.length ? grid[0].length : 0;
+    const slotTarget = (k) => (N === 1 ? 0 : (k * 4) / (N - 1));
+    const out = [];
+    let prev = null;
+    for (let s = 0; s < S; s++) {
+      const on = grid.map((r, i) => (r[s] ? i : -1)).filter((i) => i >= 0);
+      const slots = new Array(N).fill(-1);
+      const placed = new Set();
+      const reset = !prev || (periodLen && s % periodLen === 0);
+      if (!reset) prev.forEach((p, k) => { if (p >= 0 && grid[p][s]) { slots[k] = p; placed.add(p); } });
+      const incoming = on.filter((i) => !placed.has(i));
+      const free = slots.map((v, k) => (v < 0 ? k : -1)).filter((k) => k >= 0);
+      const inc = incoming.slice(0, free.length);
+      let best = inc, bestCost = Infinity;
+      const cands = inc.length <= 7 ? permutations(inc) : [inc];
+      for (const perm of cands) {
+        let c = 0;
+        perm.forEach((p, r) => {
+          const pv = posVals[p];
+          c += pv == null ? 0 : Math.abs(pv - slotTarget(free[r]));
+          c += 1e-3 * Math.abs(inc.indexOf(p) - r);
+          if (prev && reset && prev.includes(p) && prev[free[r]] !== p) c += 0.3;
+        });
+        if (c < bestCost) { bestCost = c; best = perm; }
+      }
+      best.forEach((p, r) => (slots[free[r]] = p));
+      out.push(slots);
+      prev = slots;
+    }
+    return out;
+  }
+
+  const api = { normalizeTargets, buildRotation, subEvents, analyze, assignSlots };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.Rotation = api;
 })(this);

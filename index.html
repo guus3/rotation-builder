@@ -18,6 +18,9 @@
     <section class="card" id="setup">
       <h2><span class="step">1</span> Game</h2>
       <div class="row">
+        <label class="grow">Game name <input id="title" placeholder="e.g. vs Tigers 12.11." /></label>
+      </div>
+      <div class="row" style="margin-top:12px">
         <label>Format
           <select id="preset">
             <option value="4x10">4 × 10 min (FIBA)</option>
@@ -52,9 +55,9 @@
 
     <section class="card" id="roster">
       <h2><span class="step">2</span> Players &amp; minutes</h2>
-      <p class="hint">Leave minutes empty to split the rest evenly. ⭐ = starter. <b>0</b> = won't play.</p>
+      <p class="hint">Leave minutes empty to split the rest evenly. ⭐ = starter. <b>0</b> = won't play. Position is optional (puts players in the right row).</p>
       <table class="roster">
-        <thead><tr><th>#</th><th>Name</th><th>Min</th><th title="Starter">⭐</th><th></th></tr></thead>
+        <thead><tr><th>#</th><th>Name</th><th>Pos</th><th>Min</th><th title="Starter">⭐</th><th></th></tr></thead>
         <tbody id="rosterBody"></tbody>
       </table>
       <div class="row buttons">
@@ -64,7 +67,7 @@
         <button id="clearBtn" class="ghost">Clear</button>
       </div>
       <div id="pasteBox" hidden>
-        <textarea id="pasteText" rows="6" placeholder="One player per line, e.g.&#10;4 Mikko 30&#10;11 Jussi 25&#10;Ville"></textarea>
+        <textarea id="pasteText" rows="6" placeholder="One player per line, e.g.&#10;4 Mikko PG 30&#10;11 Jussi C 25&#10;Ville"></textarea>
         <button id="pasteApply">Use this list</button>
       </div>
       <div id="minuteStatus" class="status"></div>
@@ -76,21 +79,46 @@
       <div class="result-head">
         <h2><span class="step">3</span> Rotation</h2>
         <div class="buttons">
-          <button id="rebuildBtn" class="secondary" title="Try a different variation">🔀 Another version</button>
-          <button id="shareBtn" class="secondary">🔗 Share link</button>
+          <button id="undoBtn" class="secondary" hidden>↶ Undo</button>
+          <button id="rebuildBtn" class="secondary" title="Build a different variation">🔀 New version</button>
+          <button id="shareBtn">🔗 Share link</button>
+          <button id="imageBtn">🖼️ Image</button>
           <button id="printBtn" class="secondary">🖨️ Print</button>
         </div>
       </div>
-      <p class="hint noprint">Tap a cell to put a player in/out by hand. Red numbers = needs fixing.</p>
-      <div class="chart-wrap"><table id="chart" class="chart"></table></div>
+      <p class="hint noprint">Tap a bar to change who plays there.</p>
+      <div id="lineup" class="lu-cards"></div>
+
+      <div id="minutes" class="minutes"></div>
 
       <h2 class="subs-title">Substitutions</h2>
       <div id="subs" class="subs"></div>
+
+      <details class="timeline noprint">
+        <summary>Player timeline</summary>
+        <div class="chart-wrap"><table id="chart" class="chart"></table></div>
+      </details>
     </section>
   </main>
 
-  <footer class="noprint">Saved automatically in this browser.</footer>
+  <footer class="noprint">Saved automatically in this browser. Shared links open an editable copy.</footer>
   <div id="toast" class="toast" hidden></div>
+
+  <dialog id="editDlg">
+    <form method="dialog" class="dlg">
+      <div class="dlg-head">
+        <h3 id="dlgTitle"></h3>
+        <button value="cancel" class="ghost" aria-label="Close">✕</button>
+      </div>
+      <p id="dlgNow" class="dlg-now"></p>
+      <div class="row">
+        <label>From <select id="dlgFrom"></select></label>
+        <label>To <select id="dlgTo"></select></label>
+      </div>
+      <p class="hint" style="margin:12px 0 6px">Put in:</p>
+      <div id="dlgPlayers" class="dlg-players"></div>
+    </form>
+  </dialog>
 
   <script src="rotation.js"></script>
   <script src="app.js"></script>

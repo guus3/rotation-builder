@@ -3,9 +3,9 @@
   const TEAMS_KEY = 'rotation-builder-teams';
   const TIPS_KEY = 'rotation-builder-tips'; // tips the coach has hidden
   const ROSTER_KEY = 'rotation-builder-roster';
-  const ROSTER_VERSION = '1';
+  const ROSTER_VERSION = '2';
   const TEAM = [
-    ['Akseli', 'F'], ['Anssi', 'F'], ['Beni', 'C'], ['Eero', 'F'], ['Erkka', 'G'], ['Erno', 'F'], ['Lauri', 'G'],
+    ['Akseli', 'F'], ['Anssi', 'F'], ['Beni', 'C'], ['Eero', 'F'], ['Erkka', 'G'], ['Erno', 'F'], ['Kalle', 'F'], ['Lauri', 'G'],
     ['Markus', 'F'], ['Matias', 'C'], ['Sele', 'G'], ['Tomi', 'F'], ['Waltteri S', 'G'], ['Waltteri V', 'G'],
   ];
   const teamRoster = () => TEAM.map(([name, pos], i) => ({ id: i + 1, num: '', name, pos, target: '', starter: false, finisher: false, out: false }));
@@ -253,9 +253,16 @@
           } catch (e) { /* ignore */ }
         }
         delete s.grid;
+        const rosterVersion = localStorage.getItem(ROSTER_KEY);
         // Older saved games (generic or empty rosters) switch to the team roster once.
-        if (localStorage.getItem(ROSTER_KEY) !== ROSTER_VERSION || !s.players.length) {
+        if (![ROSTER_VERSION, '1'].includes(rosterVersion) || !s.players.length) {
           Object.assign(s, { players: teamRoster(), lineup: null, targets: null, pinned: [], teamId: null, edited: false });
+        } else if (rosterVersion === '1') {
+          if (!s.players.some((p) => p.name.trim().toLowerCase() === 'kalle')) {
+            const kalle = teamRoster().find((p) => p.name === 'Kalle');
+            s.players.push({ ...kalle, id: Math.max(0, ...s.players.map((p) => p.id)) + 1 });
+          }
+          s.players.sort((a, b) => a.name.localeCompare(b.name, 'fi'));
         }
         return s;
       }

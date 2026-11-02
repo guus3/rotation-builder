@@ -9,7 +9,7 @@
     ['Akseli', 'F'], ['Anssi', 'F'], ['Beni', 'C'], ['Eero', 'F'], ['Erkka', 'G'], ['Erno', 'F'], ['Kalle', 'F'], ['Lauri', 'G'],
     ['Markus', 'F'], ['Matias', 'C'], ['Sele', 'G'], ['Tomi', 'F'], ['Waltteri S', 'G'], ['Waltteri V', 'G'],
   ];
-  const teamRoster = () => TEAM.map(([name, pos], i) => ({ id: i + 1, num: '', name, pos, target: '', starter: false, finisher: false, out: false }));
+  const teamRoster = () => TEAM.map(([name, pos], i) => ({ id: i + 1, num: '', name, pos, pos2: '', target: '', starter: false, finisher: false, out: false }));
   const $ = (id) => document.getElementById(id);
   const POS = ['PG', 'SG', 'SF', 'PF', 'C'];
   const POS_OPTIONS = ['', 'PG', 'SG', 'SF', 'PF', 'C', 'G', 'F'];
@@ -93,11 +93,17 @@
     state.lineup.forEach((row) => row.forEach((id) => (m[id] = (m[id] || 0) + 1)));
     return m;
   }
-  const posValOf = (p) => (p.pos in POS_VAL ? POS_VAL[p.pos] : null);
+  // A player's position (primary + optional secondary), see Rotation.posProfile; null = plays anywhere.
+  const posValOf = (p) => Rotation.posProfile(p.pos, p.pos2);
+  const posLabel = (p) => { const pf = posValOf(p); return pf ? pf.pos + (pf.pos2 ? `/${pf.pos2}` : '') : ''; };
+  // Secondary positions that add rows to the primary one ('' = none).
+  const pos2Options = (pos) => ['', ...(pos in POS_VAL ? POS_OPTIONS.filter((o) => o && Rotation.POS_ROWS[o] & ~Rotation.POS_ROWS[pos]) : [])];
+  // Rows as words: 'guard', 'forward' or e.g. 'PG/SG'.
+  const rowsName = (m) => (m === 3 ? 'guard' : m === 12 ? 'forward' : POS.filter((_, k) => (m >> k) & 1).join('/'));
   // Position rules of the current rotation (null = none): which rows each active player may take.
   function posPlan() {
     const rows = posRows() && Rotation.POS_MODES.find(([m]) => m === state.mode)?.[1];
-    return rows ? { rows, groups: active().map((p) => Rotation.groupOf(posValOf(p))) } : null;
+    return rows ? { rows, masks: Rotation.rowMasks(active().map(posValOf), rows) } : null;
   }
   // What a build would do with the roster as it is now: minutes, position rules, starters.
   function currentPlan() {
@@ -164,7 +170,7 @@
         ...p, out: !!p.out, starter: !!p.starter, finisher: !!p.finisher, name: String(p.name ?? ''), num: String(p.num ?? ''),
         pos: POS_OPTIONS.includes(p.pos) ? p.pos : '', target: Number.isFinite(t) && t >= 0 ? t : '',
       };
-    });
+    }).map((p) => ({ ...p, pos2: pos2Options(p.pos).includes(p.pos2) ? p.pos2 : '' }));
     out.pinned = out.pinned || [];
     if (![...Rotation.POS_MODES.map(([m]) => m), 'soft', 'off'].includes(out.mode)) out.mode = null;
     return out;
@@ -189,7 +195,7 @@
       v: 2,
       t: state.title,
       s: [st.periods, st.periodLen, st.subEvery, st.maxStint, st.minRest, st.onCourt, st.startersEachHalf ? 1 : 0, st.balancePositions ? 1 : 0],
-      p: state.players.map((p) => [p.num, p.name, p.target, p.starter ? 1 : 0, p.pos || '', p.out ? 1 : 0, p.finisher ? 1 : 0]),
+      p: state.players.map((p) => [p.num, p.name, p.target, p.starter ? 1 : 0, p.pos || '', p.out ? 1 : 0, p.finisher ? 1 : 0, p.pos2 || '']),
       g: state.players.map((p) => state.targets?.[p.id] ?? null),
       w,
       l: lineupValid() ? state.lineup.map((row) => row.map((id) => idx.get(id).toString(36).padStart(w, '0')).join('')).join('') : '',
@@ -210,7 +216,7 @@
     const [periods, periodLen, subEvery, maxStint, minRest, onCourt, seh, bal] = d.s;
     s.settings = { periods, periodLen, subEvery, maxStint, minRest, onCourt, startersEachHalf: !!seh, balancePositions: bal !== 0 };
     settingIds.forEach((k) => (s.settings[k] = clampSetting(k, s.settings[k], defaults().settings[k])));
-    s.players = d.p.map((a, i) => ({ id: i + 1, num: a[0] ?? '', name: a[1] ?? '', target: a[2] ?? '', starter: !!a[3], pos: a[4] || '', out: !!a[5], finisher: !!a[6] }));
+    s.players = d.p.map((a, i) => ({ id: i + 1, num: a[0] ?? '', name: a[1] ?? '', target: a[2] ?? '', starter: !!a[3], pos: a[4] || '', out: !!a[5], finisher: !!a[6], pos2: a[7] || '' }));
     s.targets = {};
     s.players.forEach((p, i) => (s.targets[p.id] = d.g?.[i] ?? null));
     s.mode = d.m ?? null;
@@ -321,6 +327,7 @@
   });
 
   // ---------- Roster ----------
+  const pos2Html = (p) => pos2Options(p.pos).map((o) => `<option value="${o}" ${o === (p.pos2 || '') ? 'selected' : ''}>${o || '–'}</option>`).join('');
   function renderRoster() {
     const body = $('rosterBody');
     body.innerHTML = '';
@@ -332,7 +339,8 @@
       tr.innerHTML = `
         <td class="c-in"><button class="inout ${p.out ? '' : 'on'}" aria-label="Playing this game" aria-pressed="${!p.out}" title="Playing this game">${p.out ? '' : '✓'}</button></td>
         <td><input class="name" value="${esc(p.name)}" data-f="name" placeholder="Name" /></td>
-        <td><select class="pos" data-f="pos">${POS_OPTIONS.map((o) => `<option value="${o}" ${o === (p.pos || '') ? 'selected' : ''}>${o || '–'}</option>`).join('')}</select></td>
+        <td><select class="pos" data-f="pos" aria-label="Position">${POS_OPTIONS.map((o) => `<option value="${o}" ${o === (p.pos || '') ? 'selected' : ''}>${o || '–'}</option>`).join('')}</select></td>
+        <td><select class="pos pos2" data-f="pos2" aria-label="Secondary position">${pos2Html(p)}</select></td>
         <td><input class="min" type="number" inputmode="numeric" min="0" max="${S()}" value="${p.out ? 0 : esc(p.target)}" placeholder="auto" data-f="target" ${p.out ? 'disabled' : ''} /></td>
         <td class="c-pick"><button class="pick star" data-flag="starter" aria-label="Starter"></button></td>
         <td class="c-pick"><button class="pick fin" data-flag="finisher" aria-label="Finisher – on court at the end of the game"></button></td>
@@ -349,11 +357,24 @@
       // Default names ("Player 3") are replaced by typing, not by deleting them first.
       const nameInp = tr.querySelector('.name');
       nameInp.addEventListener('focus', () => { if (/^Player \d+$/.test(nameInp.value)) nameInp.select(); });
-      tr.querySelector('.pos').addEventListener('change', (e) => {
-        p.pos = e.target.value;
+      const pos2Sel = tr.querySelector('.pos2');
+      const onPos = () => {
         renderStatus();
         if (lineupValid() && state.edited && !pending && !p.out) reseat();
         else changed();
+      };
+      tr.querySelector('.pos:not(.pos2)').addEventListener('change', (e) => {
+        p.pos = e.target.value;
+        // A secondary position that the new primary already covers (or no primary) is dropped.
+        if (!pos2Options(p.pos).includes(p.pos2)) p.pos2 = '';
+        pos2Sel.innerHTML = pos2Html(p);
+        pos2Sel.disabled = !p.pos;
+        onPos();
+      });
+      pos2Sel.disabled = !p.pos;
+      pos2Sel.addEventListener('change', (e) => {
+        p.pos2 = e.target.value;
+        onPos();
       });
       tr.querySelector('.inout').addEventListener('click', () => {
         p.out = !p.out;
@@ -408,10 +429,12 @@
     const forced = plan.targets.map((t, k) => (t >= S() && !list.includes(k) ? k : -1)).filter((k) => k >= 0);
     const onCourt = [...list, ...forced];
     const g = plan.groups ? plan.groups[i] : -1;
-    const lim = g >= 0 && plan.limits.find(([m]) => (m >> g) & 1);
-    if (lim && onCourt.filter((k) => plan.groups[k] >= 0 && (lim[0] >> plan.groups[k]) & 1).length >= lim[1]) {
-      const gs = [0, 1, 2].filter((x) => (lim[0] >> x) & 1);
-      return lim[1] === 1 ? `only 1 ${GROUP_ONE[gs[0]]} fits on court` : `only ${lim[1]} ${listAnd(gs.map((x) => GROUPS[x]))} fit on court`;
+    const inLim = (m, k) => plan.groups[k] >= 0 && (m >> plan.groups[k]) & 1;
+    const lim = g >= 0 && plan.limits.find(([m, cap]) => inLim(m, i) && onCourt.filter((k) => inLim(m, k)).length >= cap);
+    if (lim) {
+      const [, cap, rows] = lim;
+      if (cap === 1) return `only 1 ${rowsName(rows)} fits on court`;
+      return rows === 3 || rows === 12 ? `only ${cap} ${rowsName(rows)}s fit on court` : `only ${cap} players fit at ${rowsName(rows)}`;
     }
     if (forced.length) return `${listAnd(forced.map((k) => esc(shortName(act[k]))))} play${forced.length > 1 ? '' : 's'} the whole game`;
     return `only ${N()} can ${finish ? 'finish' : 'start'}`;
@@ -525,14 +548,14 @@
       const zero = act.map((p, i) => i).filter((i) => isBlank(act[i].target) && plan.targets[i] === 0 && plain[i] > 0);
       if (zero.length) {
         cls = 'warn';
-        parts.push(`${listAnd(zero.map((i) => nm(act[i])))} get${zero.length > 1 ? '' : 's'} 0 min – the typed minutes already fill the ${listAnd([...new Set(zero.map((i) => GROUP_ONE[plan.groups[i]]))])} spots`);
+        parts.push(`${listAnd(zero.map((i) => nm(act[i])))} get${zero.length > 1 ? '' : 's'} 0 min – the typed minutes already fill the ${listAnd([...new Set(zero.map((i) => rowsName(plan.masks[i])))])} spots`);
       }
     }
     const rep = posReport();
     const bad = rep.filter((o) => !o.allowed);
     if (bad.length) {
       cls = 'warn';
-      parts.push(`Out of position: ${bad.slice(0, 4).map((o) => `${nm(byId(o.id))} (${esc(byId(o.id).pos)}) at ${ROW_NAMES[o.r]} ${o.min} min`).join(', ')}${bad.length > 4 ? ', …' : ''} – New version fixes this`);
+      parts.push(`Out of position: ${bad.slice(0, 4).map((o) => `${nm(byId(o.id))} (${esc(posLabel(byId(o.id)))}) at ${ROW_NAMES[o.r]} ${o.min} min`).join(', ')}${bad.length > 4 ? ', …' : ''} – New version fixes this`);
     }
     const help = [0, 1, 2].map((r) => rep.filter((o) => o.allowed && o.r === r)).filter((c) => c.length);
     if (help.length) {
@@ -540,20 +563,21 @@
       const fixes = [];
       help.forEach((c) => {
         const r = c[0].r, total = c.reduce((a, o) => a + o.min, 0);
-        const has = act.some((p) => Rotation.groupOf(posValOf(p)) === r);
-        fixes.push(has ? `give your ${GROUPS[r]} more minutes` : `mark a player ${'GFC'[r]}`);
+        const has = act.some((p) => (posValOf(p)?.mask ?? 0) & Rotation.GROUP_ROWS[r]);
+        fixes.push(has ? `give your ${GROUPS[r]} more minutes` : `mark a player ${'GFC'[r]} (or give ${'GFC'[r]} as a 2nd position)`);
         parts.push(`${has ? `Not enough ${GROUP_ONE[r]} minutes` : `No ${GROUP_ONE[r]}`}: ${listAnd([...new Set(c.map((o) => GROUPS[o.g]))])} play ${ROW_NAMES[r]} ${total} min (${c.map((o) => `${nm(byId(o.id))} ${o.min}`).join(', ')})`);
       });
       parts.push(`<small>To keep everyone in position: ${listAnd(fixes)}, or set a player's position to '–' (plays anywhere).</small>`);
     } else if (!lineupValid() && plan && plan.rows && plan.mode !== 'strict') {
       const t = [], short = new Set();
-      plan.rows.forEach((rs, g) => rs.forEach((r) => { if (r !== g) { t.push(`${GROUPS[g]} also play ${ROW_NAMES[r]}`); short.add(r); } }));
+      plan.rows.forEach((rs, g) => rs.forEach((r) => { if (r !== g) { t.push(`${'GF'[g]} players also play ${ROW_NAMES[r]}`); short.add(r); } }));
       cls = 'warn';
       parts.push(`Not enough ${listAnd([...short].map((r) => GROUP_ONE[r]))} minutes – ${listAnd(t)}`);
     }
-    if (plan && plan.usePos && s.onCourt === 5 && plan.mode === 'soft') {
+    const posProblem = Rotation.posProblem(plan, s.onCourt);
+    if (posProblem) {
       cls = 'warn';
-      parts.push("These positions can't fill all 5 spots – positions only guide the lineups");
+      parts.push(esc(posProblem));
     }
     if (act.length < s.onCourt) { cls = 'warn'; parts.push(`Need at least ${s.onCourt} players`); }
     const el = $('minuteStatus');
@@ -569,7 +593,7 @@
   }
 
   $('addPlayer').addEventListener('click', () => {
-    state.players.push({ id: ++uid, num: '', name: '', target: '', starter: false, finisher: false, pos: '', out: false });
+    state.players.push({ id: ++uid, num: '', name: '', target: '', starter: false, finisher: false, pos: '', pos2: '', out: false });
     renderRoster();
     const names = document.querySelectorAll('#rosterBody .name');
     names[names.length - 1].focus();
@@ -611,12 +635,14 @@
     if (!lines.length) return;
     state.players = lines.map((line, i) => {
       const tokens = line.split(/[\s,;\t]+/);
-      let num = '', target = '', pos = '';
+      let num = '', target = '', pos = '', pos2 = '';
       if (/^#?\d{1,2}$/.test(tokens[0]) && tokens.length > 1) num = tokens.shift().replace('#', '');
       if (tokens.length > 1 && /^\d{1,2}$/.test(tokens[tokens.length - 1])) target = Number(tokens.pop());
-      const pi = tokens.findIndex((t, k) => k > 0 && /^(PG|SG|SF|PF|C|G|F)$/i.test(t));
-      if (pi > 0) pos = tokens.splice(pi, 1)[0].toUpperCase();
-      return { id: ++uid, num, name: tokens.join(' '), target, starter: i < state.settings.onCourt, finisher: false, pos, out: false };
+      // Position, optionally with a secondary one: PG or PG/SG.
+      const pi = tokens.findIndex((t, k) => k > 0 && /^(PG|SG|SF|PF|C|G|F)(\/(PG|SG|SF|PF|C|G|F))?$/i.test(t));
+      if (pi > 0) [pos, pos2 = ''] = tokens.splice(pi, 1)[0].toUpperCase().split('/');
+      if (!pos2Options(pos).includes(pos2)) pos2 = '';
+      return { id: ++uid, num, name: tokens.join(' '), target, starter: i < state.settings.onCourt, finisher: false, pos, pos2, out: false };
     });
     state.pinned = [];
     state.teamId = null;
@@ -666,7 +692,7 @@
     if (!team) { state.teamId = null; renderTeams(); save(); return; }
     if (state.lineup && !confirm(`Load "${team.name}"? The current rotation will be replaced.`)) { renderTeams(); return; }
     state.teamId = team.id;
-    state.players = team.players.map((p) => ({ id: ++uid, num: '', name: '', target: '', starter: false, finisher: false, pos: '', ...p, out: false }));
+    state.players = team.players.map((p) => ({ id: ++uid, num: '', name: '', target: '', starter: false, finisher: false, pos: '', pos2: '', ...p, out: false }));
     if (team.settings) state.settings = { ...state.settings, ...team.settings };
     state.lineup = null;
     state.targets = null;
@@ -686,7 +712,7 @@
     const cur = teams.find((t) => t.id === state.teamId);
     const name = (prompt('Team name', cur ? cur.name : state.title || '') || '').trim();
     if (!name) return;
-    const players = state.players.map((p) => ({ num: p.num, name: p.name, pos: p.pos || '', target: p.target, starter: !!p.starter, finisher: !!p.finisher }));
+    const players = state.players.map((p) => ({ num: p.num, name: p.name, pos: p.pos || '', pos2: p.pos2 || '', target: p.target, starter: !!p.starter, finisher: !!p.finisher }));
     const existing = teams.find((t) => t.name.toLowerCase() === name.toLowerCase());
     const team = existing || { id: Date.now(), name };
     Object.assign(team, { name, players, settings: { ...state.settings } });
@@ -824,7 +850,7 @@
     debounce = setTimeout(() => build(null, true), typing ? 600 : 0);
   }
   // What the rotation is built from: names, numbers and players who are out don't matter.
-  const buildKey = (s) => JSON.stringify([s.settings, s.seed, s.players.filter((p) => !p.out).map((p) => [p.id, p.pos, p.target, p.starter, p.finisher])]);
+  const buildKey = (s) => JSON.stringify([s.settings, s.seed, s.players.filter((p) => !p.out).map((p) => [p.id, p.pos, p.pos2 || '', p.target, p.starter, p.finisher])]);
 
   function build(note, auto) {
     clearTimeout(debounce);
@@ -860,6 +886,7 @@
       err.hidden = false;
       state.lineup = null;
       renderResult();
+      renderStatus();
     }
   }
 
@@ -1180,12 +1207,12 @@
       .map(
         ({ p, onCourt, need, t }) => `<button type="button" class="dlg-player" data-id="${p.id}">
           <i style="background:${colorOf(p.id)}"></i>
-          <span class="nm">${esc(label(p))}${p.pos ? ` <small>${p.pos}</small>` : ''}</span>
+          <span class="nm">${esc(label(p))}${p.pos ? ` <small>${esc(posLabel(p))}</small>` : ''}</span>
           <span class="meta">${onCourt ? '<em>on court → swap</em> ' : ''}${mp[p.id]}${t != null ? `/${t}` : ''} min${need > 0 ? ` <b class="need">+${need}</b>` : need < 0 ? ` <b class="over">${need}</b>` : ''}</span>
         </button>`
       )
       .join('') +
-      (hidden ? `<p class="hint dlg-note">${list.length ? `Only players who can play ${POS[j]} are listed.` : `Nobody else can play ${POS[j]} here.`} Position '–' = plays anywhere.</p>` : '');
+      (hidden ? `<p class="hint dlg-note">${list.length ? `Only players who can play ${POS[j]} are listed.` : `Nobody else can play ${POS[j]} here.`} Players only play their position or 2nd position; '–' = plays anywhere.</p>` : '');
   }
 
   $('dlgPlayers').addEventListener('click', (e) => {

@@ -137,107 +137,160 @@
   }
 
   const POS_VAL = { PG: 0, SG: 1, SF: 2, PF: 3, C: 4, G: 0.5, F: 2.5 };
-  // With 5 on court the rows are PG, SG | SF, PF | C and positions are strict: guards (PG/SG/G) play the guard
-  // rows, forwards (SF/PF/F) the forward rows and centres the C row. Players without a position can play
-  // anywhere. (Other team sizes: positions only steer the lineups, forwards avoid the last row.)
+  // Rows a position may play, as a bitmask over the rows PG(1) SG(2) SF(4) PF(8) C(16).
+  const POS_ROWS = { PG: 1, SG: 2, SF: 4, PF: 8, C: 16, G: 3, F: 12 };
+  const ALL_ROWS = 31;
+  const GROUP_ROWS = [3, 12, 16]; // guard rows, forward rows, C row
+  const popcount = (m) => { let c = 0; for (; m; m &= m - 1) c++; return c; };
+  // A player's position: primary pos plus an optional secondary pos2 (null = plays anywhere). With 5 on court
+  // a specific position (PG, SG, SF, PF, C) only plays its own row, G either guard row and F either forward
+  // row; the secondary position adds its rows. Only plain G / F players (no secondary) may help out a
+  // neighbouring group when the roster can't fill it (see POS_MODES).
+  function posProfile(pos, pos2) {
+    if (!(pos in POS_ROWS)) return null;
+    const prim = POS_ROWS[pos];
+    const sec = pos2 in POS_ROWS ? POS_ROWS[pos2] & ~prim : 0;
+    return {
+      pos, pos2: sec ? pos2 : '', val: POS_VAL[pos], val2: sec ? POS_VAL[pos2] : null,
+      prim, mask: prim | sec, generic: !sec && (pos === 'G' || pos === 'F'),
+    };
+  }
   const POS_GROUP = [0, 0, 1, 1, 2]; // row -> group: 0 = guards, 1 = forwards, 2 = centres
-  const groupOf = (pv) => (pv == null ? -1 : pv <= 1 ? 0 : pv < 4 ? 1 : 2);
-  const badSlot = (pv, k, N) =>
-    pv != null && (N === 5 ? groupOf(pv) !== POS_GROUP[k] : N > 5 && pv === POS_VAL.F && k === N - 1);
-  // If the roster or the typed minutes can't fill a group's rows, a neighbouring group helps out there (and
-  // only there). [mode, rows]: rows[g] = row groups that group g may use, most preferred mode first.
+  // Group of a player's primary position (-1 = anywhere).
+  const groupOf = (pf) => (pf == null ? -1 : pf.val <= 1 ? 0 : pf.val < 4 ? 1 : 2);
+  // Is row k outside the player's positions? (Other team sizes: positions only steer the lineups, forwards
+  // avoid the last row.)
+  const badSlot = (pf, k, N) =>
+    pf != null && (N === 5 ? !((pf.mask >> k) & 1) : N > 5 && pf.pos === 'F' && !pf.pos2 && k === N - 1);
+  // How far row k is from the player's natural spot (0 = ideal; a secondary position costs a little).
+  function posDist(pf, k, N) {
+    if (pf == null) return 0;
+    if (N === 5) {
+      if ((pf.prim >> k) & 1) return Math.abs(pf.val - k);
+      if ((pf.mask >> k) & 1) return 0.75;
+      return Math.abs(pf.val - k);
+    }
+    const t = N === 1 ? 0 : (k * 4) / (N - 1);
+    return Math.min(Math.abs(pf.val - t), pf.val2 == null ? Infinity : Math.abs(pf.val2 - t));
+  }
+  // If the roster or the typed minutes can't fill a group's rows, plain G / F players help out a neighbouring
+  // group. [mode, rows]: rows[g] = row groups that plain players of group g may use, most preferred mode first.
+  // Players with a specific or secondary position always keep their own rows.
   const POS_MODES = [
     ['strict', [[0], [1], [2]]],
-    ['relaxC', [[0], [1, 2], [2]]], // forwards also play C
-    ['relaxG', [[0], [0, 1], [2]]], // forwards also play guard
-    ['relaxF', [[0], [1], [1, 2]]], // centres also play forward
-    ['relaxGC', [[0], [0, 1, 2], [2]]], // forwards also play guard and C
-    ['relaxFG', [[0, 1], [1], [2]]], // guards also play forward
-    ['relaxCF', [[0, 1], [1, 2], [2]]], // guards also play forward, forwards also play C
-    ['relaxGF', [[0], [0, 1], [1, 2]]], // forwards also play guard, centres also play forward
+    ['relaxC', [[0], [1, 2], [2]]], // F players also play C
+    ['relaxG', [[0], [0, 1], [2]]], // F players also play guard
+    ['relaxGC', [[0], [0, 1, 2], [2]]], // F players also play guard and C
+    ['relaxFG', [[0, 1], [1], [2]]], // G players also play forward
+    ['relaxCF', [[0, 1], [1, 2], [2]]], // G players also play forward, F players also play C
   ];
-  // Which lineups fit the rows: players of a set of groups can't outnumber the rows they may use. Returns the
-  // limits that matter, [bitmask of groups (1 = guards, 2 = forwards, 4 = centres), max on court together],
-  // inner ones first (for these modes they are nested or disjoint).
-  function limitsOf(rows) {
-    const ROWS = [2, 2, 1];
-    const cap = (m) => {
-      const used = new Set();
-      rows.forEach((r, g) => { if ((m >> g) & 1) r.forEach((x) => used.add(x)); });
-      return [...used].reduce((a, x) => a + ROWS[x], 0);
-    };
-    const size = (m) => (m & 1) + ((m >> 1) & 1) + ((m >> 2) & 1);
-    const out = [];
-    for (let m = 1; m < 8; m++) {
-      const c = cap(m);
-      let implied = c >= 5;
-      for (let m2 = 1; m2 < 8; m2++) if (m2 !== m && (m & m2) === m && cap(m2) <= c) implied = true;
-      for (let a = (m - 1) & m; a > 0; a = (a - 1) & m) if (cap(a) + cap(m ^ a) <= c) implied = true;
-      if (!implied) out.push([m, c]);
+  // Rows each player may take under a mode's rows (-1 = anywhere).
+  const rowMasks = (profs, rows) => profs.map((pf) => {
+    if (pf == null) return -1;
+    const m = pf.generic && rows ? rows[groupOf(pf)].reduce((a, g) => a | GROUP_ROWS[g], 0) : pf.mask;
+    return m === ALL_ROWS ? -1 : m;
+  });
+  // Which lineups fit the rows: a lineup can fill the rows if, for every set of rows R, the players who may
+  // only play within R don't outnumber them (Hall's condition). Players with the same rows share a type
+  // (groups[i] = type index, -1 = anywhere). Returns the limits that matter, [bitmask of types, max on court
+  // together, rows R], smallest first.
+  function limitsOf(masks) {
+    const types = [...new Set(masks.filter((m) => m >= 0))];
+    const groups = masks.map((m) => (m >= 0 ? types.indexOf(m) : -1));
+    const byMembers = new Map();
+    for (let R = 1; R < ALL_ROWS; R++) {
+      let mem = 0;
+      types.forEach((m, t) => { if ((m & ~R) === 0) mem |= 1 << t; });
+      if (!mem) continue;
+      const cap = popcount(R);
+      if (!byMembers.has(mem) || byMembers.get(mem)[1] > cap) byMembers.set(mem, [mem, cap, R]);
     }
-    return out.sort((a, b) => size(a[0]) - size(b[0]));
+    const all = [...byMembers.values()];
+    // Drop limits that follow from others (a wider limit with no more room, or two separate ones together).
+    const limits = all.filter(([m, c], a) => !all.some(([m1, c1], b) => {
+      if (b === a) return false;
+      if ((m & m1) === m && c1 <= c) return true;
+      return all.some(([m2, c2], d) => d !== a && d !== b && !(m1 & m2) && (m & (m1 | m2)) === m && c1 + c2 <= c);
+    }));
+    return { groups, limits: limits.sort((x, y) => x[1] - y[1] || popcount(x[0]) - popcount(y[0])) };
   }
-  // May player i take row k under the plan from planTargets (rows/groups)?
-  const rowOk = (plan, i, k) => !plan.rows || plan.groups[i] < 0 || plan.rows[plan.groups[i]].includes(POS_GROUP[k]);
+  // May player i take row k under the plan from planTargets (masks)?
+  const rowOk = (plan, i, k) => !plan || !plan.masks || plan.masks[i] < 0 || ((plan.masks[i] >> k) & 1) === 1;
   // For each player: the limits it counts toward.
   const membership = (groups, lims, n) =>
     Array.from({ length: n }, (_, i) => {
       const g = groups && lims.length ? groups[i] : -1;
       return g < 0 ? [] : lims.map((L, l) => ((L[0] >> g) & 1 ? l : -1)).filter((l) => l >= 0);
     });
-  // Limits are nested or disjoint: parent[l] = smallest other limit that contains limit l (or -1).
-  function limitTree(lims) {
-    const size = (m) => (m & 1) + ((m >> 1) & 1) + ((m >> 2) & 1);
-    return lims.map(([m], l) => {
-      let p = -1;
-      lims.forEach(([m2], k) => {
-        if (k !== l && m2 !== m && (m & m2) === m && (p < 0 || size(m2) < size(lims[p][0]))) p = k;
-      });
-      return p;
-    });
-  }
-  // Can a partial lineup still get exactly k more players? Per limit: cnt = on court, need = must be on court,
-  // avail = members that could still be added; availAll = everyone that could still be added.
-  function completable(lims, parent, cnt, need, avail, availAll, k) {
-    const req = [], hi = [];
-    let totReq = 0, totHi = availAll;
-    for (let l = 0; l < lims.length; l++) {
-      let r = Math.max(0, need[l] - cnt[l]);
-      let h = Math.min(lims[l][1] - cnt[l], avail[l]);
-      let cr = 0, ch = 0, ca = 0;
-      for (let c = 0; c < l; c++) if (parent[c] === l) { cr += req[c]; ch += hi[c]; ca += avail[c]; }
-      r = Math.max(r, cr);
-      h = Math.min(h, ch + avail[l] - ca);
-      if (r > h) return false;
-      req[l] = r;
-      hi[l] = h;
-      if (parent[l] < 0) { totReq += r; totHi -= avail[l] - h; }
-    }
-    return totReq <= k && k <= totHi;
+  // Can a partial lineup still get exactly k more players? aT[t] = players of type t that could still be added,
+  // aFree = players without a position, lo/hi[l] = how many more of limit l's players must / may be added.
+  // Exact search over how many of each type are added; results are cached per set of limits.
+  const fillCache = new WeakMap();
+  function canFill(lims, typeL, k, aFree, aT, lo, hi) {
+    let memo = fillCache.get(lims);
+    if (!memo || memo.size > 50000) fillCache.set(lims, (memo = new Map()));
+    const key = `${k}|${Math.min(aFree, k)}|${aT.map((a) => Math.min(a, k)).join(',')}|${lo.join(',')}|${hi.join(',')}`;
+    const hit = memo.get(key);
+    if (hit !== undefined) return hit;
+    const sum = lims.map(() => 0);
+    const nT = aT.length;
+    const rec = (t, left) => {
+      if (t === nT) return left <= aFree && lo.every((v, l) => sum[l] >= v);
+      const tl = typeL[t];
+      const mx = Math.min(aT[t], left);
+      let x = 0, found = false;
+      for (;;) {
+        if (rec(t + 1, left - x)) { found = true; break; }
+        if (x === mx) break;
+        x++;
+        let over = false;
+        for (const l of tl) if (++sum[l] > hi[l]) over = true;
+        if (over) break;
+      }
+      for (const l of tl) sum[l] -= x;
+      return found;
+    };
+    const ok = rec(0, k);
+    memo.set(key, ok);
+    return ok;
   }
   // Fills one lineup under the position limits: at most cap players of a limit, at least need[l] of them,
   // and a player is only added if the lineup can still be completed to N.
-  function picker(N, lims, memb, parent, need, live) {
+  function picker(N, lims, groups, memb, need, live) {
     const chosen = [];
     const cnt = lims ? lims.map(() => 0) : null;
-    const avail = lims ? lims.map(() => 0) : null;
-    let availAll = 0;
-    if (lims) live.forEach((ok, i) => { if (ok) { availAll++; memb[i].forEach((l) => avail[l]++); } });
+    const nT = lims ? Math.max(0, ...groups.map((g) => g + 1)) : 0;
+    const aT = new Array(nT).fill(0);
+    const typeL = Array.from({ length: nT }, (_, t) => (lims || []).map((L, l) => ((L[0] >> t) & 1 ? l : -1)).filter((l) => l >= 0));
+    let aFree = 0, availAll = 0;
+    live.forEach((ok, i) => {
+      if (!ok) return;
+      availAll++;
+      if (lims && groups[i] >= 0) aT[groups[i]]++;
+      else aFree++;
+    });
+    const take = (i, d) => {
+      if (lims) memb[i].forEach((l) => (cnt[l] += d));
+      if (lims && groups[i] >= 0) aT[groups[i]] -= d;
+      else aFree -= d;
+      availAll -= d;
+    };
     const canAdd = (i, forced) => {
       if (chosen.length >= N || !live[i] || chosen.includes(i)) return false;
       if (!lims) return true;
       const ms = memb[i];
       if (ms.some((l) => cnt[l] >= lims[l][1])) return false;
       if (forced) return true;
-      ms.forEach((l) => { cnt[l]++; avail[l]--; });
-      const ok = completable(lims, parent, cnt, need, avail, availAll - 1, N - chosen.length - 1);
-      ms.forEach((l) => { cnt[l]--; avail[l]++; });
+      take(i, 1);
+      const ok = canFill(lims, typeL, N - chosen.length - 1, aFree, aT,
+        lims.map((_, l) => Math.max(0, need[l] - cnt[l])), lims.map(([, cap], l) => cap - cnt[l]));
+      take(i, -1);
       return ok;
     };
     const add = (i, forced) => {
       if (!canAdd(i, forced)) return false;
       chosen.push(i);
-      if (lims) { memb[i].forEach((l) => { cnt[l]++; avail[l]--; }); availAll--; }
+      take(i, 1);
       return true;
     };
     const short = (i) => !!lims && memb[i].some((l) => cnt[l] < need[l]);
@@ -246,24 +299,23 @@
 
   // Cost of how badly a (partial) lineup covers the PG..C spots. 0 = every player fits a spot.
   // Players without a position are flexible and cost nothing.
-  function makePosCost(posVals, N) {
+  function makePosCost(profs, N) {
     const cache = new Map();
-    const tgt = (k) => (N === 1 ? 0 : (k * 4) / (N - 1));
     return function (lineup) {
       let key = 0;
       for (const i of lineup) key += 2 ** i;
       if (cache.has(key)) return cache.get(key);
-      const pv = lineup.map((i) => posVals[i]).filter((v) => v != null);
+      const ps = lineup.map((i) => profs[i]).filter((v) => v != null);
       const used = new Array(N).fill(false);
-      let best = pv.length > N ? 0 : Infinity;
+      let best = ps.length > N ? 0 : Infinity;
       (function rec(j, acc) {
         if (acc >= best) return;
-        if (j === pv.length) { best = acc; return; }
+        if (j === ps.length) { best = acc; return; }
         for (let k = 0; k < N; k++) {
           if (used[k]) continue;
           used[k] = true;
-          const d = Math.max(0, Math.abs(pv[j] - tgt(k)) - 0.5);
-          rec(j + 1, acc + d + d * d + (badSlot(pv[j], k, N) ? 8 : 0));
+          const d = Math.max(0, posDist(ps[j], k, N) - 0.5);
+          rec(j + 1, acc + d + d * d + (badSlot(ps[j], k, N) ? 8 : 0));
           used[k] = false;
         }
       })(0, 0);
@@ -290,7 +342,6 @@
     // the rest of the game some of them must be on court now.
     const lim = cfg.limits;
     const memb = lim ? membership(cfg.groups, lim, n) : null;
-    const parent = lim ? limitTree(lim) : null;
     const remL = lim ? lim.map((_, l) => targets.reduce((a, t, i) => a + (memb[i].includes(l) ? t : 0), 0)) : null;
     // hardFin: at the end the finishers' spots are taken. blockedAfter[i][s] = minutes from s on in which player
     // i can't get on court because the finishers fill every spot i could take.
@@ -339,7 +390,7 @@
       const need = lim ? remL.map((r, l) => Math.max(0, r - lim[l][1] * (R - 1))) : null;
       // hardFin: picked finishers can't use the minutes they keep for the end of the game.
       const blockedNow = (i) => blockedAfter && blockedAfter[i][s] > blockedAfter[i][s + 1];
-      const pk = picker(N, lim, memb, parent, need, rem.map((r, i) =>
+      const pk = picker(N, lim, cfg.groups, memb, need, rem.map((r, i) =>
         r > (p.hardFin && R > finLen[i] && !base.includes(i) ? finLen[i] : 0) && !blockedNow(i)));
       const chosen = pk.chosen;
       // Players whose remaining minutes equal the minutes they still can play must play every one of them.
@@ -443,27 +494,26 @@
   // (lineup[s][j] = player index) as little as possible. Minutes are moved in chunks at the
   // start/end of stints (i.e. by shifting substitution times), taken from / given to the
   // other players in a fair way. Players in `locked` keep their minutes.
-  function adjustMinutes(lineup, idx, newVal, posVals, cfg, locked = new Set()) {
+  function adjustMinutes(lineup, idx, newVal, profs, cfg, locked = new Set()) {
     const S = lineup.length;
     const N = cfg.onCourt;
-    const n = posVals.length;
+    const n = profs.length;
     newVal = Math.max(0, Math.min(S, Math.round(newVal)));
     const lu = lineup.map((r) => r.slice());
-    const posCost = cfg.balancePositions !== false && posVals.some((v) => v != null) ? makePosCost(posVals, N) : null;
+    const posCost = cfg.balancePositions !== false && profs.some((v) => v != null) ? makePosCost(profs, N) : null;
     const c2 = { ...cfg, posCost };
-    const slotTarget = (k) => (N === 1 ? 0 : (k * 4) / (N - 1));
     const g = Array.from({ length: n }, () => new Array(S).fill(0));
     lu.forEach((row, s) => row.forEach((i) => (g[i][s] = 1)));
     const mins0 = g.map((r) => r.reduce((a, b) => a + b, 0));
     const change = new Array(n).fill(0);
-    // Who may take over a row: the plan's rows (cfg.rows/groups from planTargets) if given, else nobody out
+    // Who may take over a row: the plan's rows (cfg.masks from planTargets) if given, else nobody out
     // of position (unless the lineup already has players out of position, then it only costs extra).
     const usePos = !!posCost;
-    const strict = usePos && lineup.every((row) => row.every((i, k) => !badSlot(posVals[i], k, N)));
-    const fits = cfg.rows
+    const strict = usePos && lineup.every((row) => row.every((i, k) => !badSlot(profs[i], k, N)));
+    const fits = cfg.masks
       ? (z, j) => rowOk(cfg, z, j)
-      : (z, j) => !strict || !badSlot(posVals[z], j, N);
-    const slotFit = (z, j) => (posVals[z] == null || !usePos ? 0 : 0.3 * Math.abs(posVals[z] - slotTarget(j)) + (badSlot(posVals[z], j, N) ? 3 : 0));
+      : (z, j) => !strict || !badSlot(profs[z], j, N);
+    const slotFit = (z, j) => (profs[z] == null || !usePos ? 0 : 0.3 * posDist(profs[z], j, N) + (badSlot(profs[z], j, N) ? 3 : 0));
     const fair = (i, k) => (0.6 * ((Math.abs(change[i]) + k) ** 2 - change[i] ** 2)) / (1 + mins0[i] / 8);
     let need = newVal - mins0[idx];
 
@@ -512,33 +562,47 @@
   }
 
   // Minutes per player plus the position rules the rotation is built with. mode: 'strict' (everyone in
-  // position), 'relax…' (the roster or the typed minutes can't fill some rows, so a neighbouring group helps
-  // out there, see POS_MODES), 'soft' (positions only steer the lineups) or 'off'.
-  // starters: picked starters that start; dropped: picked starters that can't.
+  // position), 'relax…' (the roster or the typed minutes can't fill some rows, so plain G / F players help
+  // out there, see POS_MODES), 'soft' (positions only steer the lineups; with 5 on court this means the
+  // positions can't fill every row, see posProblem) or 'off'.
+  // masks[i]: rows player i may take; starters: picked starters that start; dropped: picked starters that can't.
   function planTargets(players, cfg) {
     const T = cfg.periods * cfg.periodLen;
     const N = cfg.onCourt;
     const raw = players.map((p) => p.target);
-    const posVals = players.map((p) => (p.pos in POS_VAL ? POS_VAL[p.pos] : null));
+    const posVals = players.map((p) => posProfile(p.pos, p.pos2));
     const usePos = cfg.balancePositions !== false && posVals.some((v) => v != null);
     const plain = fitTargets(raw, T, N);
-    let plan = { mode: usePos ? 'soft' : 'off', x: plain, groups: null, rows: null, limits: null };
+    let plan = { mode: usePos ? 'soft' : 'off', x: plain, groups: null, rows: null, limits: null, masks: null };
+    let unfilled = 0;
     if (usePos && N === 5) {
-      const groups = posVals.map(groupOf);
       let fallback = null;
+      const tried = new Set();
       for (const [mode, rows] of POS_MODES) {
-        const limits = limitsOf(rows);
+        const masks = rowMasks(posVals, rows);
+        const key = masks.join();
+        if (tried.has(key)) continue; // no plain G / F players this mode would change
+        tried.add(key);
+        const { groups, limits } = limitsOf(masks);
         const x = fitTargets(raw, T, N, groups, limits);
         if (!x) continue;
         // Staying in position may change the minutes a little, but typed minutes shouldn't grow much and
-        // nobody should play (almost) the whole game just for that: then a neighbouring group helps out.
+        // nobody should play (almost) the whole game just for that: then plain G / F players help out.
         const ok = x.every((v, i) => v <= plain[i] + Math.max(4, 0.3 * plain[i]) || (isBlank(raw[i]) && v <= 0.75 * T));
-        if (ok) { plan = { mode, x, groups, rows, limits }; break; }
-        fallback = fallback || { mode, x, groups, rows, limits };
+        if (ok) { plan = { mode, x, groups, rows, limits, masks }; break; }
+        fallback = fallback || { mode, x, groups, rows, limits, masks };
       }
       if (plan.mode === 'soft' && fallback) plan = fallback;
+      if (plan.mode === 'soft') {
+        // Rows nobody (who may get minutes) can play, even with help.
+        let reach = 0;
+        POS_MODES.forEach(([, rows]) => rowMasks(posVals, rows).forEach((m, i) => {
+          if (Number(raw[i]) !== 0 || isBlank(raw[i])) reach |= m < 0 ? ALL_ROWS : m;
+        }));
+        unfilled = ALL_ROWS & ~reach;
+      }
     }
-    const { groups, rows, limits } = plan;
+    const { groups, rows, limits, masks } = plan;
     const targets = roundTargets(plan.x, T, N, groups, limits);
     // Picked starters start, even if fewer than N are picked (the rest is filled in automatically). Players
     // who play the whole game always start; if the positions or the lineup size don't allow all picked
@@ -548,7 +612,19 @@
       pickFive({ targets, groups, limits }, players.map((p, i) => (p[flag] ? i : -1)).filter((i) => i >= 0), T, N);
     const [starters, dropped] = pickLineup('starter');
     const [finishers, finDropped] = pickLineup('finisher');
-    return { targets, posVals, usePos, mode: plan.mode, groups, rows, limits, starters, dropped, finishers, finDropped };
+    return { targets, posVals, usePos, mode: plan.mode, groups, rows, limits, masks, unfilled, starters, dropped, finishers, finDropped };
+  }
+
+  // Why the positions can't fill all 5 rows (null = they can).
+  const ROW_POS = ['PG', 'SG', 'SF', 'PF', 'C'];
+  function posProblem(plan, N) {
+    if (!plan || !plan.usePos || N !== 5 || plan.mode !== 'soft') return null;
+    const rows = ROW_POS.filter((_, k) => (plan.unfilled >> k) & 1);
+    if (rows.length) {
+      const list = rows.length < 2 ? rows[0] : `${rows.slice(0, -1).join(', ')} or ${rows[rows.length - 1]}`;
+      return `Nobody can play ${list}. Give a player that position or 2nd position, or set a position to '–' (plays anywhere).`;
+    }
+    return "These positions can't fill all 5 spots. Add 2nd positions, or set a position to '–' (plays anywhere).";
   }
 
   // Which picked players (indexes) fit one lineup under the plan's minutes and position limits:
@@ -561,7 +637,7 @@
     const memb = membership(groups, limits || [], targets.length);
     const need = limits && limits.map(([, cap], l) =>
       Math.max(0, targets.reduce((a, t, i) => a + (memb[i].includes(l) ? t : 0), 0) - cap * (T - 1)));
-    const pk = picker(N, limits, memb, limits && limitTree(limits), need, targets.map((t) => t > 0));
+    const pk = picker(N, limits, groups, memb, need, targets.map((t) => t > 0));
     targets.forEach((t, i) => { if (t >= T) pk.add(i, true); });
     picked.slice().sort((a, b) => targets[b] - targets[a] || a - b).forEach((i) => {
       if (pk.chosen.includes(i) || pk.add(i)) out.push(i);
@@ -573,6 +649,9 @@
   function buildRotation(players, cfg, opts = {}) {
     const N = cfg.onCourt;
     const plan = planTargets(players, cfg);
+    // Players with a position never play outside it: if the positions can't fill every row, nothing is built.
+    const problem = posProblem(plan, N);
+    if (problem) throw new Error(problem);
     const { targets, starters, finishers, posVals } = plan;
     const halfSlot = cfg.periods % 2 === 0 ? (cfg.periods / 2) * cfg.periodLen : -1;
     cfg = {
@@ -704,15 +783,14 @@
     return out;
   }
 
-  // posVals: per player a number on the PG(0)..C(4) scale, or null for "any".
+  // profs: per player a position from posProfile, or null for "any".
   // Players already on court keep their slot; incoming players take the freed slots
   // that best match their position. Returns S rows of N player indices.
   // At period starts everyone is re-placed by position (small penalty for changing rows).
   // plan (from planTargets, optional): rows a player may never take, e.g. a guard at C.
-  function assignSlots(grid, posVals, N, periodLen, plan) {
+  function assignSlots(grid, profs, N, periodLen, plan) {
     const S = grid.length ? grid[0].length : 0;
-    const slotTarget = (k) => (N === 1 ? 0 : (k * 4) / (N - 1));
-    const off = (p, k) => (plan && !rowOk(plan, p, k) ? 1000 : 0) + (badSlot(posVals[p], k, N) ? 100 : 0);
+    const off = (p, k) => (plan && !rowOk(plan, p, k) ? 1000 : 0) + (badSlot(profs[p], k, N) ? 100 : 0);
     const out = [];
     let prev = null;
     for (let s = 0; s < S; s++) {
@@ -729,8 +807,7 @@
       for (const perm of cands) {
         let c = 0;
         perm.forEach((p, r) => {
-          const pv = posVals[p];
-          c += (pv == null ? 0 : Math.abs(pv - slotTarget(free[r]))) + off(p, free[r]);
+          c += posDist(profs[p], free[r], N) + off(p, free[r]);
           c += 1e-3 * Math.abs(inc.indexOf(p) - r);
           if (prev && reset && prev.includes(p) && prev[free[r]] !== p) c += 0.3;
         });
@@ -743,8 +820,7 @@
         for (const perm of permutations(on)) {
           let c = 0;
           perm.forEach((p, k) => {
-            const pv = posVals[p];
-            c += off(p, k) + (pv == null ? 0 : 0.2 * Math.abs(pv - slotTarget(k)));
+            c += off(p, k) + 0.2 * posDist(profs[p], k, N);
             if (prev[k] !== p) c += prev.includes(p) ? 1 : 0.01;
           });
           if (c < bestAllCost) { bestAllCost = c; bestAll = perm; }
@@ -759,7 +835,8 @@
 
   const api = {
     normalizeTargets, planTargets, buildRotation, subEvents, analyze, assignSlots, makePosCost, adjustMinutes,
-    POS_VAL, POS_GROUP, POS_MODES, groupOf, badSlot, rowOk, limitsOf, pickFive,
+    POS_VAL, POS_ROWS, GROUP_ROWS, POS_GROUP, POS_MODES, posProfile, posDist, groupOf, badSlot, rowOk, rowMasks,
+    limitsOf, pickFive, posProblem,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.Rotation = api;

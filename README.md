@@ -5,9 +5,10 @@ Enter players and target minutes → get a minute-by-minute rotation chart and s
 - The default roster contains our 14 team players, alphabetically by name, with their guard/forward/centre positions. Minutes are blank for automatic allocation, and starters/finishers can be picked for each game. Browsers with an older saved roster switch to the team roster once, and an empty roster is refilled with it; after that, per-game edits (who is out, minutes) are kept. Existing 13-player team rosters gain Kalle F in alphabetical order without resetting player edits or the rotation. Shared links keep their own rosters.
 - Paste a roster (`Mikko 32` per line), leave minutes blank to split evenly, tick *Start* and *Finish* for who is on court at the start and at the end (pick 5, or just the ones you want – the rest are picked automatically). The roster has no player-number column. The column headers count the picks (e.g. *Start 3/5*); a pick that can't fit (a 6th starter, a 3rd guard when only 2 fit) is shown dashed and tapping it says why. The *Starting 5 / Closing 5* summary under the list shows the picks, with *Same as starters* and *Clear*. Finishers are on court for the last minutes of the game (last 4 min in a 4×10 game); if positions or minutes don't allow it, the app says why.
 - Rotation is built automatically: exact minutes, 5 on court, subs on chosen intervals, max stint & rest rules. Subs are bunched into fewer stoppages, a quarter break counts as rest, and the players with the most minutes finish the game where possible.
-- Positions stay put (*Keep players in their positions*, under *Rotation style*): guards (PG, SG, G) only play the two guard rows, forwards (SF, PF, F) the two forward rows, centres the C row. `–` = plays anywhere.
+- Positions stay put (*Keep players in their positions*, under *Rotation style*): a player marked PG, SG, SF, PF or C only plays that row and is never shifted to another one. G plays either guard row, F either forward row. `–` = plays anywhere.
+  - *2nd* (optional secondary position) adds the rows of a second position, e.g. PG + 2nd SG plays PG and SG, PF + 2nd C plays PF and C.
   - If the typed minutes don't fit the position rows, they're adjusted and the change is shown (e.g. *Minutes changed to keep positions: Mikko 30→27*).
-  - If the roster can't fill a position (e.g. no centre), the nearest group helps out and the app says who, for how long and how to avoid it (set a position to `–`).
+  - If the roster can't fill a position (e.g. no centre), only plain G / F players (no 2nd position) help out the nearest group; the app says who, for how long and how to avoid it. If nobody may play a row, no rotation is built and the app says which row needs a player (give someone that position or 2nd position, or set a position to `–`).
   - The edit dialog and drag only offer players who may play that row.
 - Lineup view per quarter with position rows (PG/SG/SF/PF/C, or 1–5 when no positions are set); tap a bar to swap a player in for any time range.
 - Undo covers hand edits and also the automatic rebuild after a roster or settings change, so hand edits are never lost.
@@ -16,7 +17,7 @@ Enter players and target minutes → get a minute-by-minute rotation chart and s
 - Editor: drag the white line between two bars to move a sub, drag a bar sideways to shift a stint, or use − / + (or type) per player to change minutes – the rotation and other players adjust automatically. The lock keeps a player's minutes fixed.
 - Share link: the whole rotation is compressed into the URL – whoever opens it gets an editable copy (no server/login).
 - Save image: exports a PNG of the lineup + minutes (share sheet on phones, download on desktop). Print gives a compact bench sheet (one landscape page for a typical game) with the game name, lineups, minutes and the sub list.
-- Paste format: `Mikko PG 32` (name, optional position, optional minutes). Lists with a leading player number are still supported. Data is saved in the browser.
+- Paste format: `Mikko PG 32` or `Mikko PG/SG 32` (name, optional position with optional 2nd position, optional minutes). Lists with a leading player number are still supported. Data is saved in the browser.
 
 Static site (no backend): `index.html`, `app.js`, `rotation.js` (engine), `style.css`.
 Run locally: `python3 -m http.server` and open http://localhost:8000.

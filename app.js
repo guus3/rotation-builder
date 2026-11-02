@@ -148,6 +148,20 @@
     });
     renderStatus();
   }
+  // A player ticked back in with automatic minutes would get 0 if the others' minutes already fill the game
+  // (e.g. synced from hand edits made while they were out): scale those down so automatic players get about
+  // the share they'd have with everyone on automatic minutes.
+  function makeRoomFor(p) {
+    const act = active();
+    const typed = act.reduce((a, x) => a + (isBlank(x.target) ? 0 : Number(x.target)), 0);
+    if (!isBlank(p.target) || typed < S() * N() || act.length < N()) return;
+    try {
+      const plan = (players) => Rotation.planTargets(players, { ...state.settings }).targets;
+      const even = plan(act.map((x) => ({ ...x, target: '' })));
+      const fit = plan(act.map((x, i) => ({ ...x, target: isBlank(x.target) ? even[i] : x.target })));
+      act.forEach((x, i) => { if (!isBlank(x.target)) x.target = fit[i]; });
+    } catch (e) { /* keep the minutes as they are */ }
+  }
 
   // ---------- Storage & share links ----------
   // Settings are kept within the limits of their inputs (also for saved state and share links).
@@ -379,6 +393,7 @@
       tr.querySelector('.inout').addEventListener('click', () => {
         p.out = !p.out;
         if (p.out) state.pinned = state.pinned.filter((id) => id !== p.id);
+        else makeRoomFor(p);
         renderRoster();
         body.querySelector(`tr[data-id="${p.id}"] .inout`).focus({ preventScroll: true });
         changed();

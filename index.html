@@ -61,7 +61,7 @@
             <button type="button" id="balanceInfoBtn" class="info-btn" aria-label="What does Keep players in their positions mean?" aria-expanded="false" aria-controls="balanceInfo">ⓘ</button>
           </span>
         </div>
-        <p id="balanceInfo" class="hint info-box" hidden><b>Keep players in their positions:</b> a player marked PG, SG, SF, PF or C only plays that spot, G plays either guard spot and F either forward spot. A 2nd position adds its spots (e.g. PG + SG). Players without a position can play anywhere. Players with a specific or 2nd position are never moved; if the roster cannot fill a position, only plain G / F players may help out the nearest group, and minutes may be adjusted. The app explains any change.</p>
+        <p id="balanceInfo" class="hint info-box" hidden><b>Keep players in their positions:</b> a player marked PG, SG, SF, PF or C only plays that spot, G plays either guard spot and F either forward spot. A player with several positions can play all their spots (e.g. PG + SG). Players without a position can play anywhere. Players with specific positions are never moved; if the roster cannot fill a position, only plain G / F players may help out the nearest group, and minutes may be adjusted. The app explains any change.</p>
       </details>
     </section>
 
@@ -85,15 +85,14 @@
             <li><b>In</b> – untick players who miss this game. They move to the bottom with 0 minutes; tick them back in to restore their original place and previous minutes setting.</li>
             <li><b>Min</b> – minutes for the game. Empty boxes share what's left (shown as ~20).</li>
             <li><b>Start / Finish</b> – who is on court at the start and at the end of the game. Players you pick as starters move to the top. Pick 5, or just the ones you want; the rest are picked automatically.</li>
-            <li><b>Pos</b> – players stay in position: PG, SG, SF, PF and C only play that spot, G either guard spot, F either forward spot. '–' plays anywhere.</li>
-            <li><b>2nd</b> – optional secondary position the player can also play (e.g. PG with 2nd SG plays PG and SG).</li>
+            <li><b>Pos</b> – tap to tick every position the player can play (e.g. PG and SG). PG, SG, SF, PF and C are single spots, G is either guard spot, F either forward spot. Nothing ticked ('–') plays anywhere.</li>
             <li><b>Reset</b> – back to the default view: everyone in, original order, automatic minutes and no Start/Finish picks. Names and positions stay.</li>
             <li><b>Team</b> – save your players once, then pick the team every game.</li>
           </ul>
         </details>
       </div>
       <table class="roster">
-        <thead><tr><th title="Playing this game">In</th><th>Name</th><th>Pos</th><th title="Secondary position (optional)">2nd</th><th>Min</th><th class="c-pick" title="On court at the start">Start<small id="starterCount"></small></th><th class="c-pick" title="On court at the end of the game">Finish<small id="finisherCount"></small></th><th></th></tr></thead>
+        <thead><tr><th title="Playing this game">In</th><th>Name</th><th title="Every position the player can play">Pos</th><th>Min</th><th class="c-pick" title="On court at the start">Start<small id="starterCount"></small></th><th class="c-pick" title="On court at the end of the game">Finish<small id="finisherCount"></small></th><th></th></tr></thead>
         <tbody id="rosterBody"></tbody>
       </table>
       <div class="row buttons">

@@ -6,9 +6,9 @@ Enter players and target minutes → get a minute-by-minute rotation chart and s
 - Paste a roster (`Mikko 32` per line), leave minutes blank to split evenly, tick *Start* and *Finish* for who is on court at the start and at the end (pick 5, or just the ones you want – the rest are picked automatically). The roster has no player-number column. Picked starters move to the top of the list, the latest pick first; this order is saved, so it stays after a page reload, in share links and in saved teams. The column headers count the picks (e.g. *Start 3/5*); a pick that can't fit (a 6th starter, a 3rd guard when only 2 fit) is shown dashed and tapping it says why. The *Starting 5 / Closing 5* summary under the list shows the picks, with *Same as starters* and *Clear*. Finishers are on court for the last minutes of the game (last 4 min in a 4×10 game); if positions or minutes don't allow it, the app says why.
 - Rotation is built automatically: exact minutes, 5 on court, subs on chosen intervals, max stint & rest rules. Subs are bunched into fewer stoppages, a quarter break counts as rest, and the players with the most minutes finish the game where possible.
 - Positions stay put (*Keep players in their positions*, under *Rotation style*): a player marked PG, SG, SF, PF or C only plays that row and is never shifted to another one. G plays either guard row, F either forward row. `–` = plays anywhere.
-  - *2nd* (optional secondary position) adds the rows of a second position, e.g. PG + 2nd SG plays PG and SG, PF + 2nd C plays PF and C.
+  - *Pos* is a tick list: tick every position a player can play, e.g. PG + SG plays PG and SG, PF + C plays PF and C. Players saved with the old 2nd position keep it as an extra ticked position.
   - If the typed minutes don't fit the position rows, they're adjusted and the change is shown (e.g. *Minutes changed to keep positions: Mikko 30→27*).
-  - If the roster can't fill a position (e.g. no centre), only plain G / F players (no 2nd position) help out the nearest group; the app says who, for how long and how to avoid it. If nobody may play a row, no rotation is built and the app says which row needs a player (give someone that position or 2nd position, or set a position to `–`).
+  - If the roster can't fill a position (e.g. no centre), only players with just G or just F ticked help out the nearest group; the app says who, for how long and how to avoid it. If nobody may play a row, no rotation is built and the app says which row needs a player (tick that position for someone, or untick a position to `–`).
   - The edit dialog and drag only offer players who may play that row.
 - Lineup view per quarter with position rows (PG/SG/SF/PF/C, or 1–5 when no positions are set); tap a bar to swap a player in for any time range.
 - Undo covers hand edits and also the automatic rebuild after a roster or settings change, so hand edits are never lost.
@@ -17,7 +17,7 @@ Enter players and target minutes → get a minute-by-minute rotation chart and s
 - Editor: drag the white line between two bars to move a sub, drag a bar sideways to shift a stint, or use − / + (or type) per player to change minutes – the rotation and other players adjust automatically. The lock keeps a player's minutes fixed.
 - Share link: the whole rotation is compressed into the URL – whoever opens it gets an editable copy (no server/login).
 - Save image: exports a PNG of the lineup + minutes (share sheet on phones, download on desktop). Print gives a compact bench sheet (one landscape page for a typical game) with the game name, lineups, minutes and the sub list.
-- Paste format: `Mikko PG 32` or `Mikko PG/SG 32` (name, optional position with optional 2nd position, optional minutes). Lists with a leading player number are still supported. Data is saved in the browser.
+- Paste format: `Mikko PG 32` or `Mikko PG/SG 32` (name, optional positions separated by `/`, optional minutes). Lists with a leading player number are still supported. Data is saved in the browser.
 
 Static site (no backend): `index.html`, `app.js`, `rotation.js` (engine), `style.css`.
 Run locally: `python3 -m http.server` and open http://localhost:8000.

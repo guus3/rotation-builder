@@ -9,10 +9,10 @@
     ['Akseli', 'F'], ['Anssi', 'F'], ['Beni', 'C'], ['Eero', 'F'], ['Erkka', 'G'], ['Erno', 'F'], ['Kalle', 'F'], ['Lauri', 'G'],
     ['Markus', 'F'], ['Matias', 'C'], ['Sele', 'G'], ['Tomi', 'F'], ['Waltteri S', 'G'], ['Waltteri V', 'G'],
   ];
-  const teamRoster = () => TEAM.map(([name, pos], i) => ({ id: i + 1, num: '', name, pos, pos2: '', target: '', starter: false, finisher: false, out: false }));
+  const teamRoster = () => TEAM.map(([name, pos], i) => ({ id: i + 1, num: '', name, pos, target: '', starter: false, finisher: false, out: false }));
   const $ = (id) => document.getElementById(id);
   const POS = ['PG', 'SG', 'SF', 'PF', 'C'];
-  const POS_OPTIONS = ['', 'PG', 'SG', 'SF', 'PF', 'C', 'G', 'F'];
+  const POS_OPTIONS = ['PG', 'SG', 'SF', 'PF', 'C', 'G', 'F'];
   const POS_VAL = { PG: 0, SG: 1, SF: 2, PF: 3, C: 4, G: 0.5, F: 2.5 };
   const COLORS = ['#ff7043', '#ec407a', '#26c6da', '#ffca28', '#ffa726', '#42a5f5', '#26a69a', '#66bb6a', '#5c6bc0', '#ab47bc', '#ef5350', '#8d6e63', '#9ccc65', '#7e57c2', '#78909c', '#d4e157'];
 
@@ -45,7 +45,7 @@
   const label = (p) => (p.num !== '' && p.num != null ? `#${p.num} ` : '') + (p.name || noName(p));
   const shortName = (p) => (p ? p.name || (p.num !== '' && p.num != null ? `#${p.num}` : noName(p)) : '?');
   // Rows are named PG..C only when positions are in use; otherwise they're just numbered.
-  const posRows = () => N() === 5 && state.settings.balancePositions && active().some((p) => p.pos in POS_VAL);
+  const posRows = () => N() === 5 && state.settings.balancePositions && active().some((p) => posValOf(p));
   const slotLabel = (j) => (posRows() ? POS[j] : String(j + 1));
   const GROUPS = ['guards', 'forwards', 'centres'];
   const LOCK_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2" fill="currentColor"/><path d="M8 11V8a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="2.2"/></svg>';
@@ -92,11 +92,11 @@
     state.lineup.forEach((row) => row.forEach((id) => (m[id] = (m[id] || 0) + 1)));
     return m;
   }
-  // A player's position (primary + optional secondary), see Rotation.posProfile; null = plays anywhere.
-  const posValOf = (p) => Rotation.posProfile(p.pos, p.pos2);
-  const posLabel = (p) => { const pf = posValOf(p); return pf ? pf.pos + (pf.pos2 ? `/${pf.pos2}` : '') : ''; };
-  // Secondary positions that add rows to the primary one ('' = none).
-  const pos2Options = (pos) => ['', ...(pos in POS_VAL ? POS_OPTIONS.filter((o) => o && Rotation.POS_ROWS[o] & ~Rotation.POS_ROWS[pos]) : [])];
+  // A player's positions are stored as one string, e.g. 'PG/SG' ('' = plays anywhere); see Rotation.posProfile.
+  // normPos cleans such a string (and an older separate second position) up.
+  const normPos = (pos, pos2) => [...new Set(`${pos || ''}/${pos2 || ''}`.split('/').filter((o) => POS_OPTIONS.includes(o)))].join('/');
+  const posValOf = (p) => Rotation.posProfile(p.pos);
+  const posLabel = (p) => p.pos || '';
   // Rows as words: 'guard', 'forward' or e.g. 'PG/SG'.
   const rowsName = (m) => (m === 3 ? 'guard' : m === 12 ? 'forward' : POS.filter((_, k) => (m >> k) & 1).join('/'));
   // Position rules of the current rotation (null = none): which rows each active player may take.
@@ -179,13 +179,13 @@
     settingIds.forEach((k) => (out.settings[k] = clampSetting(k, out.settings[k], d.settings[k])));
     out.players = (out.players || []).map((p) => {
       const t = p.target === '' || p.target == null ? NaN : Number(p.target);
-      const { starterAt, ...q } = p;
+      const { starterAt, pos2, ...q } = p;
       return {
         ...q, out: !!p.out, starter: !!p.starter, finisher: !!p.finisher, name: String(p.name ?? ''), num: String(p.num ?? ''),
-        pos: POS_OPTIONS.includes(p.pos) ? p.pos : '', target: Number.isFinite(t) && t >= 0 ? t : '',
+        pos: normPos(p.pos, p.pos2), target: Number.isFinite(t) && t >= 0 ? t : '',
         ...(p.starter ? { starterAt: Number.isFinite(Number(starterAt)) && starterAt >= 0 ? Number(starterAt) : 0 } : {}),
       };
-    }).map((p) => ({ ...p, pos2: pos2Options(p.pos).includes(p.pos2) ? p.pos2 : '' }));
+    });
     out.pinned = out.pinned || [];
     if (![...Rotation.POS_MODES.map(([m]) => m), 'soft', 'off'].includes(out.mode)) out.mode = null;
     return out;
@@ -210,7 +210,7 @@
       v: 2,
       t: state.title,
       s: [st.periods, st.periodLen, st.subEvery, st.maxStint, st.minRest, st.onCourt, st.startersEachHalf ? 1 : 0, st.balancePositions ? 1 : 0],
-      p: state.players.map((p) => [p.num, p.name, p.target, p.starter ? 1 + (p.starterAt || 0) : 0, p.pos || '', p.out ? 1 : 0, p.finisher ? 1 : 0, p.pos2 || '']),
+      p: state.players.map((p) => [p.num, p.name, p.target, p.starter ? 1 + (p.starterAt || 0) : 0, p.pos || '', p.out ? 1 : 0, p.finisher ? 1 : 0]),
       g: state.players.map((p) => state.targets?.[p.id] ?? null),
       w,
       l: lineupValid() ? state.lineup.map((row) => row.map((id) => idx.get(id).toString(36).padStart(w, '0')).join('')).join('') : '',
@@ -231,7 +231,7 @@
     const [periods, periodLen, subEvery, maxStint, minRest, onCourt, seh, bal] = d.s;
     s.settings = { periods, periodLen, subEvery, maxStint, minRest, onCourt, startersEachHalf: !!seh, balancePositions: bal !== 0 };
     settingIds.forEach((k) => (s.settings[k] = clampSetting(k, s.settings[k], defaults().settings[k])));
-    s.players = d.p.map((a, i) => ({ id: i + 1, num: a[0] ?? '', name: a[1] ?? '', target: a[2] ?? '', starter: !!a[3], starterAt: a[3] - 1, pos: a[4] || '', out: !!a[5], finisher: !!a[6], pos2: a[7] || '' }));
+    s.players = d.p.map((a, i) => ({ id: i + 1, num: a[0] ?? '', name: a[1] ?? '', target: a[2] ?? '', starter: !!a[3], starterAt: a[3] - 1, pos: normPos(a[4], a[7]), out: !!a[5], finisher: !!a[6] }));
     s.targets = {};
     s.players.forEach((p, i) => (s.targets[p.id] = d.g?.[i] ?? null));
     s.mode = d.m ?? null;
@@ -342,7 +342,18 @@
   });
 
   // ---------- Roster ----------
-  const pos2Html = (p) => pos2Options(p.pos).map((o) => `<option value="${o}" ${o === (p.pos2 || '') ? 'selected' : ''}>${o || '–'}</option>`).join('');
+  const posPickHtml = (p) => {
+    const mine = p.pos.split('/');
+    return `<details class="pospick"><summary aria-label="Positions">${esc(p.pos) || '–'}</summary>
+      <div class="pospanel" role="group" aria-label="Positions this player can play">
+        ${POS_OPTIONS.map((o) => `<label><input type="checkbox" value="${o}" ${mine.includes(o) ? 'checked' : ''} /> ${o}</label>`).join('')}
+        <small>None = plays anywhere</small>
+      </div></details>`;
+  };
+  // Only one position list is open at a time; clicking elsewhere closes it.
+  document.addEventListener('click', (e) => {
+    document.querySelectorAll('.pospick[open]').forEach((d) => { if (!d.contains(e.target)) d.open = false; });
+  });
   function renderRoster() {
     const body = $('rosterBody');
     body.innerHTML = '';
@@ -355,13 +366,12 @@
       tr.innerHTML = `
         <td class="c-in"><button class="inout ${p.out ? '' : 'on'}" aria-label="Playing this game" aria-pressed="${!p.out}" title="Playing this game">${p.out ? '' : '✓'}</button></td>
         <td><input class="name" value="${esc(p.name)}" data-f="name" placeholder="Name" /></td>
-        <td><select class="pos" data-f="pos" aria-label="Position">${POS_OPTIONS.map((o) => `<option value="${o}" ${o === (p.pos || '') ? 'selected' : ''}>${o || '–'}</option>`).join('')}</select></td>
-        <td><select class="pos pos2" data-f="pos2" aria-label="Secondary position">${pos2Html(p)}</select></td>
+        <td class="c-pos">${posPickHtml(p)}</td>
         <td><input class="min" type="number" inputmode="numeric" min="0" max="${S()}" value="${p.out ? 0 : esc(p.target)}" placeholder="auto" data-f="target" ${p.out ? 'disabled' : ''} /></td>
         <td class="c-pick"><button class="pick star" data-flag="starter" aria-label="Starter"></button></td>
         <td class="c-pick"><button class="pick fin" data-flag="finisher" aria-label="Finisher – on court at the end of the game"></button></td>
         <td><button class="del" aria-label="Remove">✕</button></td>`;
-      tr.querySelectorAll('input').forEach((inp) =>
+      tr.querySelectorAll('input[data-f]').forEach((inp) =>
         inp.addEventListener('input', () => {
           const f = inp.dataset.f;
           p[f] = f === 'target' ? (inp.value === '' ? '' : Number(inp.value)) : inp.value;
@@ -373,23 +383,16 @@
       // Default names ("Player 3") are replaced by typing, not by deleting them first.
       const nameInp = tr.querySelector('.name');
       nameInp.addEventListener('focus', () => { if (/^Player \d+$/.test(nameInp.value)) nameInp.select(); });
-      const pos2Sel = tr.querySelector('.pos2');
       const onPos = () => {
         renderStatus();
         if (lineupValid() && state.edited && !pending && !p.out) reseat();
         else changed();
       };
-      tr.querySelector('.pos:not(.pos2)').addEventListener('change', (e) => {
-        p.pos = e.target.value;
-        // A secondary position that the new primary already covers (or no primary) is dropped.
-        if (!pos2Options(p.pos).includes(p.pos2)) p.pos2 = '';
-        pos2Sel.innerHTML = pos2Html(p);
-        pos2Sel.disabled = !p.pos;
-        onPos();
-      });
-      pos2Sel.disabled = !p.pos;
-      pos2Sel.addEventListener('change', (e) => {
-        p.pos2 = e.target.value;
+      const pick = tr.querySelector('.pospick');
+      pick.addEventListener('change', () => {
+        const on = [...pick.querySelectorAll('input:checked')].map((c) => c.value);
+        p.pos = POS_OPTIONS.filter((o) => on.includes(o)).join('/');
+        pick.querySelector('summary').textContent = p.pos || '–';
         onPos();
       });
       tr.querySelector('.inout').addEventListener('click', () => {
@@ -582,10 +585,10 @@
       help.forEach((c) => {
         const r = c[0].r, total = c.reduce((a, o) => a + o.min, 0);
         const has = act.some((p) => (posValOf(p)?.mask ?? 0) & Rotation.GROUP_ROWS[r]);
-        fixes.push(has ? `give your ${GROUPS[r]} more minutes` : `mark a player ${'GFC'[r]} (or give ${'GFC'[r]} as a 2nd position)`);
+        fixes.push(has ? `give your ${GROUPS[r]} more minutes` : `mark a player ${'GFC'[r]} (or add ${'GFC'[r]} to a player's positions)`);
         parts.push(`${has ? `Not enough ${GROUP_ONE[r]} minutes` : `No ${GROUP_ONE[r]}`}: ${listAnd([...new Set(c.map((o) => GROUPS[o.g]))])} play ${ROW_NAMES[r]} ${total} min (${c.map((o) => `${nm(byId(o.id))} ${o.min}`).join(', ')})`);
       });
-      parts.push(`<small>To keep everyone in position: ${listAnd(fixes)}, or set a player's position to '–' (plays anywhere).</small>`);
+      parts.push(`<small>To keep everyone in position: ${listAnd(fixes)}, or untick all positions for a player (plays anywhere).</small>`);
     } else if (!lineupValid() && plan && plan.rows && plan.mode !== 'strict') {
       const t = [], short = new Set();
       plan.rows.forEach((rs, g) => rs.forEach((r) => { if (r !== g) { t.push(`${'GF'[g]} players also play ${ROW_NAMES[r]}`); short.add(r); } }));
@@ -611,7 +614,7 @@
   }
 
   $('addPlayer').addEventListener('click', () => {
-    state.players.push({ id: ++uid, num: '', name: '', target: '', starter: false, finisher: false, pos: '', pos2: '', out: false });
+    state.players.push({ id: ++uid, num: '', name: '', target: '', starter: false, finisher: false, pos: '', out: false });
     renderRoster();
     const names = document.querySelectorAll('#rosterBody .name');
     names[names.length - 1].focus();
@@ -652,14 +655,13 @@
     if (!lines.length) return;
     state.players = lines.map((line, i) => {
       const tokens = line.split(/[\s,;\t]+/);
-      let num = '', target = '', pos = '', pos2 = '';
+      let num = '', target = '', pos = '';
       if (/^#?\d{1,2}$/.test(tokens[0]) && tokens.length > 1) num = tokens.shift().replace('#', '');
       if (tokens.length > 1 && /^\d{1,2}$/.test(tokens[tokens.length - 1])) target = Number(tokens.pop());
-      // Position, optionally with a secondary one: PG or PG/SG.
-      const pi = tokens.findIndex((t, k) => k > 0 && /^(PG|SG|SF|PF|C|G|F)(\/(PG|SG|SF|PF|C|G|F))?$/i.test(t));
-      if (pi > 0) [pos, pos2 = ''] = tokens.splice(pi, 1)[0].toUpperCase().split('/');
-      if (!pos2Options(pos).includes(pos2)) pos2 = '';
-      return { id: ++uid, num, name: tokens.join(' '), target, starter: i < state.settings.onCourt, finisher: false, pos, pos2, out: false };
+      // Position, optionally several: PG or PG/SG/SF.
+      const pi = tokens.findIndex((t, k) => k > 0 && /^(PG|SG|SF|PF|C|G|F)(\/(PG|SG|SF|PF|C|G|F))*$/i.test(t));
+      if (pi > 0) pos = normPos(tokens.splice(pi, 1)[0].toUpperCase());
+      return { id: ++uid, num, name: tokens.join(' '), target, starter: i < state.settings.onCourt, finisher: false, pos, out: false };
     });
     state.pinned = [];
     state.teamId = null;
@@ -709,7 +711,7 @@
     if (!team) { state.teamId = null; renderTeams(); save(); return; }
     if (state.lineup && !confirm(`Load "${team.name}"? The current rotation will be replaced.`)) { renderTeams(); return; }
     state.teamId = team.id;
-    state.players = team.players.map((p) => ({ id: ++uid, num: '', name: '', target: '', starter: false, finisher: false, pos: '', pos2: '', ...p, out: false }));
+    state.players = team.players.map((p) => ({ id: ++uid, num: '', name: '', target: '', starter: false, finisher: false, ...p, pos: normPos(p.pos, p.pos2), pos2: undefined, out: false }));
     if (team.settings) state.settings = { ...state.settings, ...team.settings };
     state.lineup = null;
     state.targets = null;
@@ -729,7 +731,7 @@
     const cur = teams.find((t) => t.id === state.teamId);
     const name = (prompt('Team name', cur ? cur.name : state.title || '') || '').trim();
     if (!name) return;
-    const players = state.players.map((p) => ({ num: p.num, name: p.name, pos: p.pos || '', pos2: p.pos2 || '', target: p.target, starter: !!p.starter, ...(p.starter ? { starterAt: p.starterAt || 0 } : {}), finisher: !!p.finisher }));
+    const players = state.players.map((p) => ({ num: p.num, name: p.name, pos: p.pos || '', target: p.target, starter: !!p.starter, ...(p.starter ? { starterAt: p.starterAt || 0 } : {}), finisher: !!p.finisher }));
     const existing = teams.find((t) => t.name.toLowerCase() === name.toLowerCase());
     const team = existing || { id: Date.now(), name };
     Object.assign(team, { name, players, settings: { ...state.settings } });
@@ -867,7 +869,7 @@
     debounce = setTimeout(() => build(null, true), typing ? 600 : 0);
   }
   // What the rotation is built from: names, numbers and players who are out don't matter.
-  const buildKey = (s) => JSON.stringify([s.settings, s.seed, s.players.filter((p) => !p.out).map((p) => [p.id, p.pos, p.pos2 || '', p.target, p.starter, p.finisher])]);
+  const buildKey = (s) => JSON.stringify([s.settings, s.seed, s.players.filter((p) => !p.out).map((p) => [p.id, p.pos, p.target, p.starter, p.finisher])]);
 
   function build(note, auto) {
     clearTimeout(debounce);
@@ -1229,7 +1231,7 @@
         </button>`
       )
       .join('') +
-      (hidden ? `<p class="hint dlg-note">${list.length ? `Only players who can play ${POS[j]} are listed.` : `Nobody else can play ${POS[j]} here.`} Players only play their position or 2nd position; '–' = plays anywhere.</p>` : '');
+      (hidden ? `<p class="hint dlg-note">${list.length ? `Only players who can play ${POS[j]} are listed.` : `Nobody else can play ${POS[j]} here.`} Players only play their listed positions; none ticked = plays anywhere.</p>` : '');
   }
 
   $('dlgPlayers').addEventListener('click', (e) => {

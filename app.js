@@ -33,7 +33,6 @@
   let uid = Date.now();
   let undoStack = [];
   let rotationId = null;
-  let starterTop = []; // player ids in the order they were picked as starters, newest first
 
   // ---------- Helpers ----------
   const S = () => state.settings.periods * state.settings.periodLen;
@@ -180,9 +179,11 @@
     settingIds.forEach((k) => (out.settings[k] = clampSetting(k, out.settings[k], d.settings[k])));
     out.players = (out.players || []).map((p) => {
       const t = p.target === '' || p.target == null ? NaN : Number(p.target);
+      const { starterAt, ...q } = p;
       return {
-        ...p, out: !!p.out, starter: !!p.starter, finisher: !!p.finisher, name: String(p.name ?? ''), num: String(p.num ?? ''),
+        ...q, out: !!p.out, starter: !!p.starter, finisher: !!p.finisher, name: String(p.name ?? ''), num: String(p.num ?? ''),
         pos: POS_OPTIONS.includes(p.pos) ? p.pos : '', target: Number.isFinite(t) && t >= 0 ? t : '',
+        ...(p.starter ? { starterAt: Number.isFinite(Number(starterAt)) && starterAt >= 0 ? Number(starterAt) : 0 } : {}),
       };
     }).map((p) => ({ ...p, pos2: pos2Options(p.pos).includes(p.pos2) ? p.pos2 : '' }));
     out.pinned = out.pinned || [];
@@ -209,7 +210,7 @@
       v: 2,
       t: state.title,
       s: [st.periods, st.periodLen, st.subEvery, st.maxStint, st.minRest, st.onCourt, st.startersEachHalf ? 1 : 0, st.balancePositions ? 1 : 0],
-      p: state.players.map((p) => [p.num, p.name, p.target, p.starter ? 1 : 0, p.pos || '', p.out ? 1 : 0, p.finisher ? 1 : 0, p.pos2 || '']),
+      p: state.players.map((p) => [p.num, p.name, p.target, p.starter ? 1 + (p.starterAt || 0) : 0, p.pos || '', p.out ? 1 : 0, p.finisher ? 1 : 0, p.pos2 || '']),
       g: state.players.map((p) => state.targets?.[p.id] ?? null),
       w,
       l: lineupValid() ? state.lineup.map((row) => row.map((id) => idx.get(id).toString(36).padStart(w, '0')).join('')).join('') : '',
@@ -230,7 +231,7 @@
     const [periods, periodLen, subEvery, maxStint, minRest, onCourt, seh, bal] = d.s;
     s.settings = { periods, periodLen, subEvery, maxStint, minRest, onCourt, startersEachHalf: !!seh, balancePositions: bal !== 0 };
     settingIds.forEach((k) => (s.settings[k] = clampSetting(k, s.settings[k], defaults().settings[k])));
-    s.players = d.p.map((a, i) => ({ id: i + 1, num: a[0] ?? '', name: a[1] ?? '', target: a[2] ?? '', starter: !!a[3], pos: a[4] || '', out: !!a[5], finisher: !!a[6], pos2: a[7] || '' }));
+    s.players = d.p.map((a, i) => ({ id: i + 1, num: a[0] ?? '', name: a[1] ?? '', target: a[2] ?? '', starter: !!a[3], starterAt: a[3] - 1, pos: a[4] || '', out: !!a[5], finisher: !!a[6], pos2: a[7] || '' }));
     s.targets = {};
     s.players.forEach((p, i) => (s.targets[p.id] = d.g?.[i] ?? null));
     s.mode = d.m ?? null;
@@ -345,7 +346,8 @@
   function renderRoster() {
     const body = $('rosterBody');
     body.innerHTML = '';
-    const rank = (p) => { const k = p.starter ? starterTop.indexOf(p.id) : -1; return k < 0 ? Infinity : k; };
+    // Picked starters first, the most recently picked on top (starterAt is saved, so the order survives a reload).
+    const rank = (p) => (p.starter ? -(p.starterAt || 0) : Infinity);
     [...state.players].sort((a, b) => Number(a.out) - Number(b.out) || (rank(a) === rank(b) ? 0 : rank(a) < rank(b) ? -1 : 1)).forEach((p) => {
       const tr = document.createElement('tr');
       tr.dataset.id = p.id;
@@ -405,7 +407,8 @@
           if (!p[f] && btn.dataset.block) { toast(btn.dataset.block); return; }
           p[f] = !p[f];
           if (f === 'starter') {
-            starterTop = p.starter ? [p.id, ...starterTop.filter((id) => id !== p.id)] : starterTop.filter((id) => id !== p.id);
+            if (p.starter) p.starterAt = 1 + Math.max(0, ...state.players.filter((x) => x !== p && x.starter).map((x) => x.starterAt || 0));
+            else delete p.starterAt;
             renderRoster();
             body.querySelector(`tr[data-id="${p.id}"] [data-flag="${f}"]`).focus({ preventScroll: true });
           } else renderStatus();
@@ -616,9 +619,8 @@
   });
   // Back to the default view: everyone in, original order, automatic minutes, no Start/Finish picks.
   $('resetBtn').addEventListener('click', () => {
-    state.players.forEach((p) => { p.out = false; p.target = ''; p.starter = false; p.finisher = false; });
+    state.players.forEach((p) => { p.out = false; p.target = ''; p.starter = false; p.finisher = false; delete p.starterAt; });
     state.pinned = [];
-    starterTop = [];
     renderRoster();
     changed();
     toast('Players and minutes reset');
@@ -727,7 +729,7 @@
     const cur = teams.find((t) => t.id === state.teamId);
     const name = (prompt('Team name', cur ? cur.name : state.title || '') || '').trim();
     if (!name) return;
-    const players = state.players.map((p) => ({ num: p.num, name: p.name, pos: p.pos || '', pos2: p.pos2 || '', target: p.target, starter: !!p.starter, finisher: !!p.finisher }));
+    const players = state.players.map((p) => ({ num: p.num, name: p.name, pos: p.pos || '', pos2: p.pos2 || '', target: p.target, starter: !!p.starter, ...(p.starter ? { starterAt: p.starterAt || 0 } : {}), finisher: !!p.finisher }));
     const existing = teams.find((t) => t.name.toLowerCase() === name.toLowerCase());
     const team = existing || { id: Date.now(), name };
     Object.assign(team, { name, players, settings: { ...state.settings } });

@@ -142,17 +142,18 @@
   const ALL_ROWS = 31;
   const GROUP_ROWS = [3, 12, 16]; // guard rows, forward rows, C row
   const popcount = (m) => { let c = 0; for (; m; m &= m - 1) c++; return c; };
-  // A player's position: primary pos plus an optional secondary pos2 (null = plays anywhere). With 5 on court
-  // a specific position (PG, SG, SF, PF, C) only plays its own row, G either guard row and F either forward
-  // row; the secondary position adds its rows. Only plain G / F players (no secondary) may help out a
-  // neighbouring group when the roster can't fill it (see POS_MODES).
+  // A player's positions: any number of them, joined by '/' in pos (e.g. 'PG/SG'; the optional pos2 is an extra
+  // one, for older data). Empty = plays anywhere (null). With 5 on court a specific position (PG, SG, SF, PF, C)
+  // only plays its own row, G either guard row and F either forward row; the player may take the rows of every
+  // listed position. The first listed position is the main one. Only a plain G or F player (a single position)
+  // may help out a neighbouring group when the roster can't fill it (see POS_MODES).
   function posProfile(pos, pos2) {
-    if (!(pos in POS_ROWS)) return null;
-    const prim = POS_ROWS[pos];
-    const sec = pos2 in POS_ROWS ? POS_ROWS[pos2] & ~prim : 0;
+    const list = [...new Set(`${pos || ''}/${pos2 || ''}`.split('/').filter((x) => x in POS_ROWS))];
+    if (!list.length) return null;
+    const prim = POS_ROWS[list[0]];
     return {
-      pos, pos2: sec ? pos2 : '', val: POS_VAL[pos], val2: sec ? POS_VAL[pos2] : null,
-      prim, mask: prim | sec, generic: !sec && (pos === 'G' || pos === 'F'),
+      pos: list.join('/'), list, val: POS_VAL[list[0]], vals: list.map((x) => POS_VAL[x]),
+      prim, mask: list.reduce((m, x) => m | POS_ROWS[x], 0), generic: list.length === 1 && (list[0] === 'G' || list[0] === 'F'),
     };
   }
   const POS_GROUP = [0, 0, 1, 1, 2]; // row -> group: 0 = guards, 1 = forwards, 2 = centres
@@ -161,8 +162,8 @@
   // Is row k outside the player's positions? (Other team sizes: positions only steer the lineups, forwards
   // avoid the last row.)
   const badSlot = (pf, k, N) =>
-    pf != null && (N === 5 ? !((pf.mask >> k) & 1) : N > 5 && pf.pos === 'F' && !pf.pos2 && k === N - 1);
-  // How far row k is from the player's natural spot (0 = ideal; a secondary position costs a little).
+    pf != null && (N === 5 ? !((pf.mask >> k) & 1) : N > 5 && pf.pos === 'F' && k === N - 1);
+  // How far row k is from the player's natural spot (0 = ideal; a further position costs a little).
   function posDist(pf, k, N) {
     if (pf == null) return 0;
     if (N === 5) {
@@ -171,11 +172,11 @@
       return Math.abs(pf.val - k);
     }
     const t = N === 1 ? 0 : (k * 4) / (N - 1);
-    return Math.min(Math.abs(pf.val - t), pf.val2 == null ? Infinity : Math.abs(pf.val2 - t));
+    return Math.min(...pf.vals.map((v) => Math.abs(v - t)));
   }
   // If the roster or the typed minutes can't fill a group's rows, plain G / F players help out a neighbouring
   // group. [mode, rows]: rows[g] = row groups that plain players of group g may use, most preferred mode first.
-  // Players with a specific or secondary position always keep their own rows.
+  // Players with a specific or combined position always keep their own rows.
   const POS_MODES = [
     ['strict', [[0], [1], [2]]],
     ['relaxC', [[0], [1, 2], [2]]], // F players also play C
@@ -622,9 +623,9 @@
     const rows = ROW_POS.filter((_, k) => (plan.unfilled >> k) & 1);
     if (rows.length) {
       const list = rows.length < 2 ? rows[0] : `${rows.slice(0, -1).join(', ')} or ${rows[rows.length - 1]}`;
-      return `Nobody can play ${list}. Give a player that position or 2nd position, or set a position to '–' (plays anywhere).`;
+      return `Nobody can play ${list}. Give a player that position, or set a position to '–' (plays anywhere).`;
     }
-    return "These positions can't fill all 5 spots. Add 2nd positions, or set a position to '–' (plays anywhere).";
+    return "These positions can't fill all 5 spots. Add more positions to players, or set a position to '–' (plays anywhere).";
   }
 
   // Which picked players (indexes) fit one lineup under the plan's minutes and position limits:

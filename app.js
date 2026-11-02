@@ -148,7 +148,7 @@
     });
     renderStatus();
   }
-  // A player ticked back in with automatic minutes would get 0 if the others' minutes already fill the game
+  // A player ticked back in (or newly added) with automatic minutes would get 0 if the others' minutes already fill the game
   // (e.g. synced from hand edits made while they were out): scale those down so automatic players get about
   // the share they'd have with everyone on automatic minutes.
   function makeRoomFor(p) {
@@ -608,7 +608,9 @@
   }
 
   $('addPlayer').addEventListener('click', () => {
-    state.players.push({ id: ++uid, num: '', name: '', target: '', starter: false, finisher: false, pos: '', pos2: '', out: false });
+    const p = { id: ++uid, num: '', name: '', target: '', starter: false, finisher: false, pos: '', pos2: '', out: false };
+    state.players.push(p);
+    makeRoomFor(p);
     renderRoster();
     const names = document.querySelectorAll('#rosterBody .name');
     names[names.length - 1].focus();

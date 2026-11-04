@@ -1,10 +1,23 @@
-# 🏀 Rotation Builder
+# Rotation Builder
 
 Enter players and target minutes → get a minute-by-minute rotation chart and substitution sheet.
 
-- Paste a roster (`4 Mikko 32` per line), leave minutes blank to split evenly, ⭐ starters.
-- Rotation is built automatically: exact minutes, 5 on court, subs on chosen intervals, max stint & rest rules.
-- Tap chart cells to adjust by hand; print or share a link. Data is saved in the browser.
+- The default roster contains our 14 team players, alphabetically by name, with their guard/forward/centre positions. Minutes are blank for automatic allocation, and starters/finishers can be picked for each game. Browsers with an older saved roster switch to the team roster once, and an empty roster is refilled with it; after that, per-game edits (who is out, minutes) are kept. Existing 13-player team rosters gain Kalle F in alphabetical order without resetting player edits or the rotation. Shared links keep their own rosters.
+- Paste a roster (`Mikko 32` per line), leave minutes blank to split evenly, tick *Start* and *Finish* for who is on court at the start and at the end (pick 5, or just the ones you want – the rest are picked automatically). The roster has no player-number column. Picked starters move to the top of the list, the latest pick first; this order is saved, so it stays after a page reload, in share links and in saved teams. The column headers count the picks (e.g. *Start 3/5*); a pick that can't fit (a 6th starter, a 3rd guard when only 2 fit) is shown dashed and tapping it says why. The *Starting 5 / Closing 5* summary under the list shows the picks, with *Same as starters* and *Clear*. Finishers are on court for the last minutes of the game (last 4 min in a 4×10 game); if positions or minutes don't allow it, the app says why.
+- Rotation is built automatically: exact minutes, 5 on court, subs on chosen intervals, max stint & rest rules. Subs are bunched into fewer stoppages, a quarter break counts as rest, and the players with the most minutes finish the game where possible.
+- Positions stay put (*Keep players in their positions*, under *Rotation style*): a player marked PG, SG, SF, PF or C only plays that row and is never shifted to another one. G plays either guard row, F either forward row. `–` = plays anywhere.
+  - *Pos* is a tick list: tick every position a player can play, e.g. PG + SG plays PG and SG, PF + C plays PF and C. Players saved with the old 2nd position keep it as an extra ticked position.
+  - If the typed minutes don't fit the position rows, they're adjusted and the change is shown (e.g. *Minutes changed to keep positions: Mikko 30→27*).
+  - If the roster can't fill a position (e.g. no centre), only players with just G or just F ticked help out the nearest group; the app says who, for how long and how to avoid it. If nobody may play a row, no rotation is built and the app says which row needs a player (tick that position for someone, or untick a position to `–`).
+  - The edit dialog and drag only offer players who may play that row.
+- Lineup view per quarter with position rows (PG/SG/SF/PF/C, or 1–5 when no positions are set); tap a bar to swap a player in for any time range.
+- Undo covers hand edits and also the automatic rebuild after a roster or settings change, so hand edits are never lost.
+- Teams: save your roster once as a team, pick it each game and untick players who are out (saved in the browser). Out players move to the bottom of the list and show 0 in the Min column. The original order is preserved within each group; tick a player back in to restore their original place and previous minutes setting. A player on automatic minutes gets an automatic share again: if the others' minutes already fill the game (e.g. after hand edits while the player was out), those are scaled down to make room.
+- Saved rotations: click **Save rotation** above the rotation chart and give it a name. In **Game → Saved rotation**, pick one and click **Load** to use an editable copy for your next game. This restores the exact rotation (including hand edits), players, minutes, out players, starter/finisher picks, locks, game name and settings without rebuilding it. Change the game name for the next opponent; edits do not change the saved copy unless you save over the same name and confirm. You can keep multiple named rotations or delete a saved one without clearing the current game. Saved rotations are stored only in this browser, not synced across devices; use Share link to transfer a copy.
+- Editor: drag the white line between two bars to move a sub, drag a bar sideways to shift a stint, or use − / + (or type) per player to change minutes – the rotation and other players adjust automatically. The lock keeps a player's minutes fixed.
+- Share link: the whole rotation is compressed into the URL – whoever opens it gets an editable copy (no server/login).
+- Save image: exports a PNG of the lineup + minutes (share sheet on phones, download on desktop). Print gives a compact bench sheet (one landscape page for a typical game) with the game name, lineups, minutes and the sub list.
+- Paste format: `Mikko PG 32` or `Mikko PG/SG 32` (name, optional positions separated by `/`, optional minutes). Lists with a leading player number are still supported. Data is saved in the browser.
 
 Static site (no backend): `index.html`, `app.js`, `rotation.js` (engine), `style.css`.
 Run locally: `python3 -m http.server` and open http://localhost:8000.

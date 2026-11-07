@@ -82,24 +82,66 @@
     return x;
   }
 
-  // Whole minutes that add up to exactly N*T (and stay within the position limits).
-  function roundTargets(x, T, N, groups, limits) {
+  // Sub windows within a period: the period is split into about L / subEvery equal blocks (half rounds down), so
+  // there's no short tail (10-min quarters, every 4 or 5 min → subs at minutes 0 and 5).
+  // win[m]: 0 = sub window, 1 = a minute next to a mid-period window (e.g. 4 or 6 in a 10-min quarter: allowed
+  // at a small cost), 2 = off the windows. block = shortest block, unit = block length if all blocks are equal.
+  const winCache = new Map();
+  function subWindows(cfg) {
+    const L = cfg.periodLen, key = `${L}|${cfg.subEvery}`;
+    if (winCache.has(key)) return winCache.get(key);
+    const k = Math.max(1, Math.ceil(L / Math.max(1, cfg.subEvery || 1) - 0.5));
+    const win = new Array(L).fill(2);
+    const mids = [];
+    for (let j = 0; j < k; j++) { const m = Math.round((j * L) / k); win[m] = 0; if (j) mids.push(m); }
+    mids.forEach((w) => [w - 1, w + 1].forEach((m) => { if (m >= 2 && L - m >= 2 && win[m] === 2) win[m] = 1; }));
+    const res = { win, block: Math.floor(L / k), unit: L % k === 0 ? L / k : 1 };
+    winCache.set(key, res);
+    return res;
+  }
+  // Shortest shift a player should get (cfg.minShift, default 4; 0 = no rule), at most one block between subs.
+  const minShiftOf = (cfg) => Math.min(cfg.minShift ?? 4, subWindows(cfg).block);
+  // Shortest rest: a player who comes off sits at least minRest minutes, and with a shortest-shift rule also
+  // at least that long (out for a minute and straight back in is just as unrealistic).
+  const minRestOf = (cfg) => { const ms = minShiftOf(cfg); return Math.max(cfg.minRest ?? 0, ms > 2 ? ms : 0); };
+
+  // Whole minutes that add up to exactly N*T (and stay within the position limits). Players with snap[i] set
+  // (automatic minutes) get whole blocks of `unit` minutes where possible, so they can play whole shifts.
+  // prefer[i]: who gets the extra block first when shares are equal.
+  function roundTargets(x, T, N, groups, limits, unit = 1, snap = null, prefer = null) {
     const lims = limits || [];
     const memb = membership(groups, lims, x.length);
-    const fl = x.map((v) => Math.floor(v + 1e-9));
+    const step = x.map((_, i) => (unit > 1 && snap && snap[i] ? unit : 1));
+    const fl = x.map((v, i) => step[i] * Math.floor(v / step[i] + 1e-9));
     const room = lims.map((L) => L[1] * T);
     fl.forEach((v, i) => memb[i].forEach((l) => (room[l] -= v)));
     let left = N * T - fl.reduce((a, b) => a + b, 0);
-    const order = x.map((v, i) => [v - fl[i], i]).sort((a, b) => b[0] - a[0]);
+    const pref = (i) => (prefer && prefer[i] ? 1 : 0);
+    if (unit > 1 && snap) {
+      // Whole blocks first, to the players closest to their next block.
+      const blocks = x.map((v, i) => [(v - fl[i]) / step[i], i]).filter(([, i]) => step[i] > 1 && x[i] > 0)
+        .sort((a, b) => b[0] - a[0] || pref(b[1]) - pref(a[1]) || a[1] - b[1]);
+      for (const [, i] of blocks) {
+        if (left < unit) break;
+        if (fl[i] + unit <= T && memb[i].every((l) => room[l] >= unit)) {
+          fl[i] += unit;
+          memb[i].forEach((l) => (room[l] -= unit));
+          left -= unit;
+        }
+      }
+    }
+    const order = x.map((v, i) => [v - fl[i], i]).sort((a, b) => b[0] - a[0] || pref(b[1]) - pref(a[1]) || a[1] - b[1]);
     for (let pass = 0; left > 0; pass++) {
       let moved = false;
       for (const [, i] of order) {
         if (left <= 0) break;
         if (pass === 0 && x[i] <= 0) continue; // players with 0 minutes only get one if nothing else works
         if (fl[i] < T && memb[i].every((l) => room[l] > 0)) {
-          fl[i]++;
-          memb[i].forEach((l) => room[l]--);
-          left--;
+          // Odd minutes left over: a player on whole blocks takes as many as fit, so few players get odd minutes.
+          const k = step[i] > 1 ? Math.min(left, T - fl[i], ...memb[i].map((l) => room[l])) : 1;
+          fl[i] += k;
+          memb[i].forEach((l) => (room[l] -= k));
+          left -= k;
           moved = true;
         }
       }
@@ -326,12 +368,16 @@
   }
 
   function buildOnce(targets, starters, cfg, rng, p) {
-    const { periods, periodLen, onCourt: N, subEvery, maxStint, minRest, startersEachHalf } = cfg;
+    const { periods, periodLen, onCourt: N, maxStint, startersEachHalf } = cfg;
     const S = periods * periodLen;
     const n = targets.length;
     const rem = targets.slice();
     const stint = new Array(n).fill(0);
+    const shift = new Array(n).fill(0); // minutes on court since the player came in (breaks don't reset it)
     const rest = new Array(n).fill(99);
+    const { win } = subWindows(cfg);
+    const ms = minShiftOf(cfg);
+    const restMin = minRestOf(cfg);
     let on = new Set();
     const grid = targets.map(() => new Array(S).fill(0));
     const halfSlot = periods % 2 === 0 ? (periods / 2) * periodLen : -1;
@@ -365,7 +411,7 @@
       const m = s % periodLen;
       if (s === halfSlot) { stint.fill(0); for (let i = 0; i < n; i++) rest[i] = 99; }
       else if (m === 0 && s > 0) for (let i = 0; i < n; i++) { stint[i] = Math.max(0, stint[i] - BREAK); if (!on.has(i)) rest[i] += BREAK; }
-      const isWindow = m === 0 || m % subEvery === 0;
+      const isWindow = win[m] === 0 || (p.soft && win[m] === 1);
 
       const score = new Array(n);
       for (let i = 0; i < n; i++) {
@@ -376,10 +422,11 @@
         if (gap[i] && R <= C) sc -= (p.closeW * gap[i]) / 10;
         if (finLen[i]) sc += R <= finLen[i] ? 5 : rem[i] <= finLen[i] ? -5 : 0;
         if (on.has(i)) {
-          if (stint[i] < p.minStint) sc += 1;
+          if (ms > 2 && shift[i] < ms) sc += 3; // a shift is at least ms minutes
+          else if (stint[i] < p.minStint) sc += 1;
           else if (stint[i] >= maxStint) sc -= 0.6 + 0.15 * (stint[i] - maxStint);
           else sc += p.stay;
-        } else if (rest[i] < minRest) sc -= 0.8;
+        } else if (rest[i] < restMin) sc -= 0.8;
         score[i] = sc;
       }
       const byScore = (a, b) => score[b] - score[a];
@@ -418,6 +465,7 @@
       for (let i = 0; i < n; i++) {
         if (next.has(i)) {
           stint[i] = on.has(i) ? stint[i] + 1 : 1;
+          shift[i] = on.has(i) ? shift[i] + 1 : 1;
           rest[i] = 0;
           rem[i]--;
           if (lim) memb[i].forEach((l) => remL[l]--);
@@ -425,6 +473,7 @@
         } else {
           rest[i] = on.has(i) ? 1 : rest[i] + 1;
           stint[i] = 0;
+          shift[i] = 0;
         }
       }
       on = next;
@@ -433,7 +482,8 @@
   }
 
   // Cost weights. Stoppages and long stints are what make a sheet hard to run from the bench.
-  const W = { moment: 1.5, offWindow: 2, closers: 0.15, long: 0.8, finisher: 30 };
+  // short: per minute a shift is shorter than the shortest shift; softWindow: a sub a minute off a mid-period window.
+  const W = { moment: 1.5, offWindow: 3, softWindow: 0.75, short: 3, closers: 0.15, long: 0.8, finisher: 30 };
   // A break between periods counts as this many minutes of rest (halftime as a full rest).
   const BREAK = 2;
 
@@ -441,7 +491,11 @@
     const S = cfg.periods * cfg.periodLen;
     const L = cfg.periodLen;
     const half = cfg.periods % 2 === 0 ? (cfg.periods / 2) * L : -1;
-    let subs = 0, longStint = 0, shortStint = 0, shortRest = 0, offWindow = 0, moments = 0, closers = 0;
+    let subs = 0, longStint = 0, shortStint = 0, shortRest = 0, offWindow = 0, softWindow = 0, moments = 0, closers = 0;
+    const { win } = subWindows(cfg);
+    const ms = minShiftOf(cfg);
+    const minRun = Math.max(2, ms);
+    const restMin = minRestOf(cfg);
     const subAt = new Uint8Array(S);
     const mins = new Array(grid.length);
     grid.forEach((row, i) => {
@@ -457,15 +511,16 @@
           if (s > 0 && !row[s - 1]) {
             subs += m === 0 ? 0.4 : 1;
             if (m) subAt[s] = 1;
-            if (m % cfg.subEvery !== 0) offWindow++;
-            if (entered && off < cfg.minRest) shortRest++;
+            if (win[m] === 2) offWindow++;
+            else if (win[m] === 1) softWindow++;
+            if (entered && off < restMin) shortRest += ms > 2 ? restMin - off : 1;
           } else if (m === 0 && s > 0 && s + 1 < S && !row[s + 1]) {
             shortStint++; // starts a period and goes straight back out after 1 minute
           }
           run++; load++; off = 0; entered = true; total++;
           if (load > cfg.maxStint) longStint += load - cfg.maxStint; // grows with every extra minute
         } else {
-          if (run && run < 2) shortStint++;
+          if (run && run < minRun) shortStint += minRun - run;
           run = 0; load = 0; off++;
         }
       }
@@ -486,8 +541,8 @@
         posPenalty += cfg.posCost(on);
       }
     }
-    const cost = subs + W.moment * moments + W.long * longStint + 1.5 * shortStint + 0.5 * shortRest +
-      W.offWindow * offWindow + 0.6 * posPenalty + W.closers * closers + W.finisher * finMiss;
+    const cost = subs + W.moment * moments + W.long * longStint + (ms > 2 ? W.short : 1.5) * shortStint + (ms > 2 ? W.short : 0.5) * shortRest +
+      W.offWindow * offWindow + W.softWindow * softWindow + 0.6 * posPenalty + W.closers * closers + W.finisher * finMiss;
     return { subs, moments, posPenalty, finMiss, cost };
   }
 
@@ -604,7 +659,10 @@
       }
     }
     const { groups, rows, limits, masks } = plan;
-    const targets = roundTargets(plan.x, T, N, groups, limits);
+    // Automatic minutes come in whole blocks between sub windows (e.g. 10/15/20 with subs every 5 min).
+    const unit = minShiftOf(cfg) > 1 ? subWindows(cfg).unit : 1;
+    const prefer = players.map((p) => !!(p.starter || p.finisher));
+    const targets = roundTargets(plan.x, T, N, groups, limits, unit, raw.map(isBlank), prefer);
     // Picked starters start, even if fewer than N are picked (the rest is filled in automatically). Players
     // who play the whole game always start; if the positions or the lineup size don't allow all picked
     // starters, the ones with the most minutes start.
@@ -613,7 +671,7 @@
       pickFive({ targets, groups, limits }, players.map((p, i) => (p[flag] ? i : -1)).filter((i) => i >= 0), T, N);
     const [starters, dropped] = pickLineup('starter');
     const [finishers, finDropped] = pickLineup('finisher');
-    return { targets, posVals, usePos, mode: plan.mode, groups, rows, limits, masks, unfilled, starters, dropped, finishers, finDropped };
+    return { targets, unit, posVals, usePos, mode: plan.mode, groups, rows, limits, masks, unfilled, starters, dropped, finishers, finDropped };
   }
 
   // Why the positions can't fill all 5 rows (null = they can).
@@ -677,6 +735,7 @@
         posW: k === 0 ? 0.3 : rng() * 0.8,
         closeW: k === 0 ? 1 : rng() * 2,
         hardFin: finishers.length > 0 && k % 2 === 1,
+        soft: k % 3 === 2, // also sub a minute off the mid-period windows (e.g. at 4 or 6)
       };
       const grid = buildOnce(targets, starters, cfg, rng, p);
       // The hard finisher rule can paint itself into a corner: skip those (the soft builds always work).
@@ -837,7 +896,7 @@
   const api = {
     normalizeTargets, planTargets, buildRotation, subEvents, analyze, assignSlots, makePosCost, adjustMinutes,
     POS_VAL, POS_ROWS, GROUP_ROWS, POS_GROUP, POS_MODES, posProfile, posDist, groupOf, badSlot, rowOk, rowMasks,
-    limitsOf, pickFive, posProblem,
+    limitsOf, pickFive, posProblem, subWindows,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.Rotation = api;

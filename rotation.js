@@ -412,6 +412,9 @@
       if (s === halfSlot) { stint.fill(0); for (let i = 0; i < n; i++) rest[i] = 99; }
       else if (m === 0 && s > 0) for (let i = 0; i < n; i++) { stint[i] = Math.max(0, stint[i] - BREAK); if (!on.has(i)) rest[i] += BREAK; }
       const isWindow = win[m] === 0 || (p.soft && win[m] === 1);
+      // Who stays on now stays until the next window: count those minutes against the longest stint.
+      let toNext = 1;
+      while (m + toNext < periodLen && !(win[m + toNext] === 0 || (p.soft && win[m + toNext] === 1))) toNext++;
 
       const score = new Array(n);
       for (let i = 0; i < n; i++) {
@@ -424,7 +427,7 @@
         if (on.has(i)) {
           if (ms > 2 && shift[i] < ms) sc += 3; // a shift is at least ms minutes
           else if (stint[i] < p.minStint) sc += 1;
-          else if (stint[i] >= maxStint) sc -= 0.6 + 0.15 * (stint[i] - maxStint);
+          else if (stint[i] + (isWindow ? toNext : 0) > maxStint) sc -= 0.6 + 0.15 * (stint[i] + (isWindow ? toNext : 0) - maxStint);
           else sc += p.stay;
         } else if (rest[i] < restMin) sc -= 0.8;
         score[i] = sc;
@@ -631,6 +634,7 @@
     const plain = fitTargets(raw, T, N);
     let plan = { mode: usePos ? 'soft' : 'off', x: plain, groups: null, rows: null, limits: null, masks: null };
     let unfilled = 0;
+    const { block } = subWindows(cfg);
     if (usePos && N === 5) {
       let fallback = null;
       const tried = new Set();
@@ -644,7 +648,9 @@
         if (!x) continue;
         // Staying in position may change the minutes a little, but typed minutes shouldn't grow much and
         // nobody should play (almost) the whole game just for that: then plain G / F players help out.
-        const ok = x.every((v, i) => v <= plain[i] + Math.max(4, 0.3 * plain[i]) || (isBlank(raw[i]) && v <= 0.75 * T));
+        // With whole-block shifts, more than one block short of every period would mean playing whole periods.
+        const blankCap = Math.min(0.75 * T, minShiftOf(cfg) > 2 && block < cfg.periodLen ? T - cfg.periods * block : T);
+        const ok = x.every((v, i) => v <= plain[i] + Math.max(4, 0.3 * plain[i]) || (isBlank(raw[i]) && v <= blankCap));
         if (ok) { plan = { mode, x, groups, rows, limits, masks }; break; }
         fallback = fallback || { mode, x, groups, rows, limits, masks };
       }
@@ -797,9 +803,29 @@
       ? Array.from({ length: S }, (_, s) => lim.map((_, l) => g.reduce((a, r, i) => a + (r[s] && memb[i].includes(l) ? 1 : 0), 0)))
       : null;
     let cost = analyze(g, cfg).cost;
+    // Blocks between sub windows (soft ones too, e.g. minute 4 or 6) as [start minute, length]. Swapping whole
+    // blocks keeps shifts long, which single-minute swaps can't do once short shifts cost a lot.
+    const { win } = subWindows(cfg);
+    const L = cfg.periodLen;
+    const cuts = [];
+    for (let m = 0; m <= L; m++) if (m === L || win[m] <= 1) cuts.push(m);
+    const minLen = Math.max(2, minShiftOf(cfg));
+    const byLen = new Map();
+    for (let p = 0; p < cfg.periods; p++) {
+      for (const x of cuts) for (const y of cuts) {
+        if (y - x < minLen || y - x === L) continue;
+        if (!byLen.has(y - x)) byLen.set(y - x, []);
+        byLen.get(y - x).push(p * L + x);
+      }
+    }
+    const blocks = [...byLen.entries()].flatMap(([len, starts]) => starts.map((s) => [s, len]));
     for (let k = 0; k < steps; k++) {
       const a = Math.floor(rng() * n), b = Math.floor(rng() * n);
       if (a === b) continue;
+      if (blocks.length > 1 && rng() < 0.3) {
+        blockSwap(a, b);
+        continue;
+      }
       const s = Math.floor(rng() * S);
       let t = rng() < 0.5 ? Math.floor(rng() * S) : s + (rng() < 0.5 ? -1 : 1) * (1 + Math.floor(rng() * 4));
       if (t < 0 || t >= S || lock.includes(s) || lock.includes(t)) continue;
@@ -818,6 +844,34 @@
       } else { g[a][s] = 1; g[a][t] = 0; g[b][s] = 0; g[b][t] = 1; }
     }
     return g;
+
+    // a hands a block starting at s0 to b and takes b's block of the same length starting at t0.
+    function blockSwap(a, b) {
+      const [s0, len] = blocks[Math.floor(rng() * blocks.length)];
+      const same = byLen.get(len);
+      const t0 = same[Math.floor(rng() * same.length)];
+      if (Math.abs(s0 - t0) < len) return;
+      for (let x = 0; x < len; x++) {
+        const s = s0 + x, t = t0 + x;
+        if (lock.includes(s) || lock.includes(t) || !(g[a][s] && !g[a][t] && !g[b][s] && g[b][t])) return;
+      }
+      let d = null;
+      if (lim) {
+        d = lim.map((_, l) => (memb[b].includes(l) ? 1 : 0) - (memb[a].includes(l) ? 1 : 0));
+        for (let x = 0; x < len; x++) {
+          if (d.some((v, l) => (v > 0 && onL[s0 + x][l] >= lim[l][1]) || (v < 0 && onL[t0 + x][l] >= lim[l][1]))) return;
+        }
+      }
+      const flip = (on) => {
+        for (let x = 0; x < len; x++) { g[a][s0 + x] = on ? 0 : 1; g[a][t0 + x] = on ? 1 : 0; g[b][s0 + x] = on ? 1 : 0; g[b][t0 + x] = on ? 0 : 1; }
+      };
+      flip(true);
+      const c = analyze(g, cfg).cost;
+      if (c <= cost) {
+        cost = c;
+        if (d) for (let x = 0; x < len; x++) d.forEach((v, l) => { onL[s0 + x][l] += v; onL[t0 + x][l] -= v; });
+      } else flip(false);
+    }
   }
 
   // Substitution events: [{slot, ins:[idx], outs:[idx]}]

@@ -18,7 +18,7 @@
 
   const defaults = () => ({
     title: '',
-    settings: { periods: 4, periodLen: 10, subEvery: 4, maxStint: 6, minRest: 2, onCourt: 5, startersEachHalf: true, balancePositions: true },
+    settings: { periods: 4, periodLen: 10, subEvery: 4, maxStint: 6, minRest: 2, minShift: 4, onCourt: 5, startersEachHalf: true, balancePositions: true },
     players: [],
     lineup: null, // lineup[minute][slot] = player id
     targets: null, // { playerId: minutes }
@@ -209,7 +209,7 @@
     const payload = {
       v: 2,
       t: state.title,
-      s: [st.periods, st.periodLen, st.subEvery, st.maxStint, st.minRest, st.onCourt, st.startersEachHalf ? 1 : 0, st.balancePositions ? 1 : 0],
+      s: [st.periods, st.periodLen, st.subEvery, st.maxStint, st.minRest, st.onCourt, st.startersEachHalf ? 1 : 0, st.balancePositions ? 1 : 0, st.minShift],
       p: state.players.map((p) => [p.num, p.name, p.target, p.starter ? 1 + (p.starterAt || 0) : 0, p.pos || '', p.out ? 1 : 0, p.finisher ? 1 : 0]),
       g: state.players.map((p) => state.targets?.[p.id] ?? null),
       w,
@@ -228,8 +228,8 @@
     const d = JSON.parse(new TextDecoder().decode(bytes));
     const s = defaults();
     s.title = d.t || '';
-    const [periods, periodLen, subEvery, maxStint, minRest, onCourt, seh, bal] = d.s;
-    s.settings = { periods, periodLen, subEvery, maxStint, minRest, onCourt, startersEachHalf: !!seh, balancePositions: bal !== 0 };
+    const [periods, periodLen, subEvery, maxStint, minRest, onCourt, seh, bal, minShift] = d.s;
+    s.settings = { periods, periodLen, subEvery, maxStint, minRest, minShift, onCourt, startersEachHalf: !!seh, balancePositions: bal !== 0 };
     settingIds.forEach((k) => (s.settings[k] = clampSetting(k, s.settings[k], defaults().settings[k])));
     s.players = d.p.map((a, i) => ({ id: i + 1, num: a[0] ?? '', name: a[1] ?? '', target: a[2] ?? '', starter: !!a[3], starterAt: a[3] - 1, pos: normPos(a[4], a[7]), out: !!a[5], finisher: !!a[6] }));
     s.targets = {};
@@ -297,7 +297,7 @@
   }
 
   // ---------- Settings ----------
-  const settingIds = ['periods', 'periodLen', 'subEvery', 'maxStint', 'minRest', 'onCourt'];
+  const settingIds = ['periods', 'periodLen', 'subEvery', 'maxStint', 'minRest', 'minShift', 'onCourt'];
   function renderSettings() {
     const s = state.settings;
     settingIds.forEach((k) => ($(k).value = s[k]));
@@ -530,7 +530,8 @@
       const auto = plan ? act.map((p, i) => (isBlank(p.target) ? plan.targets[i] : null)).filter((v) => v != null) : [];
       const lo = Math.min(...auto), hi = Math.max(...auto);
       const each = auto.length ? `~${lo}${hi > lo ? `–${hi}` : ''}` : `~${Math.round((need - sum) / blanks)}`;
-      parts.push(`${sum} / ${need} set, ${blanks} on auto (${each} min each)`);
+      const shifts = plan && plan.unit > 1 ? `, in whole ${plan.unit}-min shifts` : '';
+      parts.push(`${sum} / ${need} set, ${blanks} on auto (${each} min each${shifts})`);
     }
 
     const dropped = fresh ? plan.dropped : [];
